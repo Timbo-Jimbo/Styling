@@ -73,7 +73,6 @@ namespace TimboJimbo.Styling.Editor
 
 				OverrideRoots.Add(root);
 				SaveOverrides.Add(StylingSystem.StylingOverrideScope(root, EmptyStyles));
-				StyleSheetEditorStylingUtility.RefreshSubtreeImmediate(root);
 			}
 		}
 
@@ -86,14 +85,6 @@ namespace TimboJimbo.Styling.Editor
 				SaveOverrides[i].Dispose();
 
 			SaveOverrides.Clear();
-
-			for (int i = 0; i < OverrideRoots.Count; i++)
-			{
-				var root = OverrideRoots[i];
-				if (root != null)
-					StyleSheetEditorStylingUtility.RefreshSubtreeImmediate(root);
-			}
-
 			OverrideRoots.Clear();
 		}
 

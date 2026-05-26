@@ -681,7 +681,6 @@ namespace TimboJimbo.Styling.Editor
 			_isPreviewing = true;
 			_previewStyleName = styleName;
 
-			StyleSheetEditorStylingUtility.RefreshSubtreeImmediate(_sheet.gameObject);
 			SceneView.RepaintAll();
 		}
 
@@ -694,9 +693,6 @@ namespace TimboJimbo.Styling.Editor
 			_previewOverride = null;
 			_isPreviewing = false;
 			_previewStyleName = null;
-
-			if (_sheet != null && _sheet.gameObject != null)
-				StyleSheetEditorStylingUtility.RefreshSubtreeImmediate(_sheet.gameObject);
 
 			SceneView.RepaintAll();
 		}

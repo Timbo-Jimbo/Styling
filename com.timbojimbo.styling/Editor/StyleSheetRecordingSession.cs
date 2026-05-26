@@ -186,9 +186,6 @@ namespace TimboJimbo.Styling.Editor
 			_activeOverride?.Dispose();
 			_activeOverride = null;
 
-			if (target != null)
-				StyleSheetEditorStylingUtility.RefreshSubtreeImmediate(target.gameObject);
-
 			_allProperties = null;
 			_preEditValues = null;
 			_editingOriginalName = null;
@@ -208,7 +205,6 @@ namespace TimboJimbo.Styling.Editor
 		{
 			_activeOverride?.Dispose();
 			_activeOverride = StylingSystem.StylingOverrideScope(root, activeStyleNames);
-			StyleSheetEditorStylingUtility.RefreshSubtreeImmediate(root);
 		}
 
 		private static void SnapshotAllValues(List<BindablePropertyToValue> result)
