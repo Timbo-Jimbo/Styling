@@ -1,0 +1,19 @@
+{
+	"name": "com.timbojimbo.styling",
+	"displayName":"Styling",
+	"version": "0.1.0",
+	"unity": "6000.0",
+	"unityRelease": "0f1",
+	"description": "todo",
+	"dependencies": {
+		"com.unity.test-framework": "1.6.0"
+	},
+	"author": {
+		"name": "Timbo Jimbo",
+		"url": "https://timbojimbo.com",
+		"email": "hello@timbojimbo.com"
+	},
+	"changelogUrl": "https://github.com/Timbo-Jimbo/Styling/blob/main/Packages/com.timbojimbo.styling/CHANGELOG.md",
+	"documentationUrl": "https://github.com/Timbo-Jimbo/Styling#readme",
+	"licensesUrl": "https://github.com/Timbo-Jimbo/Styling/blob/main/LICENSE"
+}

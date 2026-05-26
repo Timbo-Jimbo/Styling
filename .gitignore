@@ -1,0 +1,65 @@
+# Unity generated folders
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Mm]emoryCaptures/
+[Pp]rofilerCaptures/
+UserSettings/
+
+# Unity auto-generated solution and project files
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity meta backup files
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.gradle/
+.vscode/
+ExportedObj/
+.consulo/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln.docstates
+*.DotSettings.user
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Crash reports
+sysinfo.txt
+
+# Addressables / Asset import cache
+Assets/AddressableAssetsData/*/*.bin*
+
+# Ignore generated backup files
+*.bak
+*.backup
+*.orig
+
+# If you use generated test/build outputs, keep them out of source control
+*.apk
+*.aab
+*.unitypackage
