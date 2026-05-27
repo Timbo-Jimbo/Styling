@@ -37,16 +37,15 @@ namespace TimboJimbo.Styling
         [SerializeField] private bool _enableInterpolation = true;
         [SerializeField] private float _transitionTime = 0.25f;
 
-        [NonSerialized] private CachedState _cachedState = new CachedState();
-
         // Cascade subscription state.
         [NonSerialized] private List<BindablePropertyToValue> _fromValues = new List<BindablePropertyToValue>();
         [NonSerialized] private List<BindablePropertyToValue> _targetValues = new List<BindablePropertyToValue>();
         [NonSerialized] private List<BindablePropertyToValue> _currentValues = new List<BindablePropertyToValue>();
         [NonSerialized] private HashSet<string> _activeStyleNames = new HashSet<string>();
-        [NonSerialized] private float _t = 1f;
+        [NonSerialized] private float _transitionProgress01 = 1f;
         [NonSerialized] private bool _isTransitioning;
         [NonSerialized] private bool _hasAppliedAnyStyling;
+        [NonSerialized] private BindingCollectionManager _bindingCollectionManager;
 
         public IReadOnlyList<Style> Styles => _styles;
         public IReadOnlyList<BindablePropertyToValue> BaselineValues => _baselineValues;
@@ -66,27 +65,40 @@ namespace TimboJimbo.Styling
 
         public bool IsTransitioning => _isTransitioning;
 
+        public StyleSheet() 
+        { 
+            _bindingCollectionManager = new BindingCollectionManager(this); 
+        }
+
         private void OnEnable()
         {
+            // Persistent - keeps the bindings alive across Update ticks while enabled.
+            _bindingCollectionManager.AcquirePersistent();
             _hasAppliedAnyStyling = false;
             UpdateStylingState(UpdateType.RefreshStyleActivationsAndTargetValues);
         }
 
         private void OnDisable()
         {
-            _cachedState.Dispose();
+            // Release. If nothing else currently holds a handle (typical) the
+            // underling binding collection is disposed
+            _bindingCollectionManager.ReleasePersistent();
             _isTransitioning = false;
         }
 
         private void OnTransformParentChanged()
         {
-            UpdateStylingState(UpdateType.RefreshStyleActivationsAndTargetValues);
+            using (_bindingCollectionManager.Acquire())
+                UpdateStylingState(UpdateType.RefreshStyleActivationsAndTargetValues);
         }
 
         private void OnValidate()
         {
-            _cachedState?.Invalidate();
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            using (_bindingCollectionManager.Acquire())
+            {
+                _bindingCollectionManager.Invalidate();
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
         }
 
         private void Update()
@@ -98,19 +110,19 @@ namespace TimboJimbo.Styling
             if (_isTransitioning)
             {
                 if (_transitionTime <= 0f)
-                    _t = 1f;
+                    _transitionProgress01 = 1f;
                 else
-                    _t += Time.deltaTime / _transitionTime;
+                    _transitionProgress01 += Time.deltaTime / _transitionTime;
 
-                if (_t >= 1f)
+                if (_transitionProgress01 >= 1f)
                 {
-                    _t = 1f;
+                    _transitionProgress01 = 1f;
                     _isTransitioning = false;
                     ApplyValueList(_targetValues);
                 }
                 else
                 {
-                    LerpAndApply(_t);
+                    LerpAndApply(_transitionProgress01);
                 }
             }
         }
@@ -170,10 +182,13 @@ namespace TimboJimbo.Styling
                 newStyle.PropertyValues.Add(postEditPropertyValues[postIdx]);
             }
 
-            _styles.Add(newStyle);
-            EnsurePropertiesExistInBaselineAndConfig(propertiesForStyle, preEditPropertyValues);
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
-            return newStyle;
+            using (_bindingCollectionManager.Acquire())
+            {
+                _styles.Add(newStyle);
+                EnsurePropertiesExistInBaselineAndConfig(propertiesForStyle, preEditPropertyValues);
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+                return newStyle;
+            }
         }
 
         /// <summary>
@@ -195,24 +210,27 @@ namespace TimboJimbo.Styling
                     throw new ArgumentException($"Post-edit property values must contain an entry for each property in the style. Missing entry for {property.Target.name}.{property.Path} of kind {property.Kind}.");
             }
 
-            foreach (var property in propertiesForStyle)
+            using (_bindingCollectionManager.Acquire())
             {
-                if (!Util.TryFindIndexByProperty(postEditPropertyValues, property, out var postIdx))
+                foreach (var property in propertiesForStyle)
                 {
-                    //this can never happen because of the earlier check,
-                    throw new InvalidOperationException("Unexpected error: property not found in post-edit values.");
+                    if (!Util.TryFindIndexByProperty(postEditPropertyValues, property, out var postIdx))
+                    {
+                        //this can never happen because of the earlier check,
+                        throw new InvalidOperationException("Unexpected error: property not found in post-edit values.");
+                    }
+
+                    var post = postEditPropertyValues[postIdx];
+
+                    if (!Util.TryFindIndexByProperty(style.PropertyValues, property, out var existingIdx))
+                        style.PropertyValues.Add(post);
+                    else
+                        style.PropertyValues[existingIdx] = post;
                 }
 
-                var post = postEditPropertyValues[postIdx];
-
-                if (!Util.TryFindIndexByProperty(style.PropertyValues, property, out var existingIdx))
-                    style.PropertyValues.Add(post);
-                else
-                    style.PropertyValues[existingIdx] = post;
+                EnsurePropertiesExistInBaselineAndConfig(propertiesForStyle, preEditPropertyValues);
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
             }
-
-            EnsurePropertiesExistInBaselineAndConfig(propertiesForStyle, preEditPropertyValues);
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
         }
 
         public void RenameStyle(string oldName, string newName)
@@ -220,34 +238,43 @@ namespace TimboJimbo.Styling
             var style = GetStyle(oldName);
             if (HasStyle(newName))
                 throw new ArgumentException($"A style with name {newName} already exists.");
-            style.Name = newName;
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            using (_bindingCollectionManager.Acquire())
+            {
+                style.Name = newName;
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
         }
 
         public void DeleteStyle(string styleName)
         {
             var style = GetStyle(styleName);
-            _styles.Remove(style);
-            PruneUnusedBaselineAndConfigs();
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            using (_bindingCollectionManager.Acquire())
+            {
+                _styles.Remove(style);
+                PruneUnusedBaselineAndConfigs();
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
         }
 
         public void DeletePropertyFromAllStyles(BindableProperty property)
         {
-            for (int i = 0; i < _styles.Count; i++)
+            using (_bindingCollectionManager.Acquire())
             {
-                if (Util.TryFindIndexByProperty(_styles[i].PropertyValues, property, out var idx))
-                    _styles[i].PropertyValues.RemoveAt(idx);
+                for (int i = 0; i < _styles.Count; i++)
+                {
+                    if (Util.TryFindIndexByProperty(_styles[i].PropertyValues, property, out var idx))
+                        _styles[i].PropertyValues.RemoveAt(idx);
+                }
+
+                if (Util.TryFindIndexByProperty(_baselineValues, property, out var baselineIdx))
+                    _baselineValues.RemoveAt(baselineIdx);
+
+                if (Util.TryFindIndexByProperty(_propertyConfigs, property, out var configIdx))
+                    _propertyConfigs.RemoveAt(configIdx);
+
+                _bindingCollectionManager.Invalidate();
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
             }
-
-            if (Util.TryFindIndexByProperty(_baselineValues, property, out var baselineIdx))
-                _baselineValues.RemoveAt(baselineIdx);
-
-            if (Util.TryFindIndexByProperty(_propertyConfigs, property, out var configIdx))
-                _propertyConfigs.RemoveAt(configIdx);
-
-            _cachedState.Invalidate();
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
         }
         
         /// <summary>
@@ -257,12 +284,15 @@ namespace TimboJimbo.Styling
         public bool TryUpdateStyleValue(string styleName, BindableProperty property, ValueContainer value)
         {
             var style = GetStyle(styleName);
-            
+
             if (!Util.TryFindIndexByProperty(style.PropertyValues, property, out var idx))
                 return false;
-            
-            style.PropertyValues[idx] = new BindablePropertyToValue { Property = property, Value = value };
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+
+            using (_bindingCollectionManager.Acquire())
+            {
+                style.PropertyValues[idx] = new BindablePropertyToValue { Property = property, Value = value };
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
 
             return true;
         }
@@ -277,8 +307,11 @@ namespace TimboJimbo.Styling
             if (!Util.TryFindIndexByProperty(style.PropertyValues, property, out var idx))
                 return false;
 
-            style.PropertyValues.RemoveAt(idx);
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            using (_bindingCollectionManager.Acquire())
+            {
+                style.PropertyValues.RemoveAt(idx);
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
 
             return true;
         }
@@ -292,9 +325,12 @@ namespace TimboJimbo.Styling
             if (!Util.TryFindIndexByProperty(_baselineValues, property, out var idx))
                 return false;
 
-            _baselineValues[idx] = new BindablePropertyToValue { Property = property, Value = value };
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
-            
+            using (_bindingCollectionManager.Acquire())
+            {
+                _baselineValues[idx] = new BindablePropertyToValue { Property = property, Value = value };
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
+
             return true;
         }
 
@@ -304,21 +340,24 @@ namespace TimboJimbo.Styling
         public void GetCurrentValues(List<BindablePropertyToValue> propertyValues)
         {
             propertyValues.Clear();
-            var binding = _cachedState.GetPropertyBindingCollection(gameObject, _styles, _baselineValues, _propertyConfigs);
-            var allProps = _cachedState.GetAllProperties(gameObject, _styles, _baselineValues, _propertyConfigs);
-
-            for (int i = 0; i < allProps.Count; i++)
+            using (var handle = _bindingCollectionManager.Acquire())
             {
-                var property = allProps[i];
-                if (binding.TryRead(property, out var value))
+                var bindingCollection = handle.BindingCollection;
+
+                foreach(var (property, binding) in bindingCollection.Bindings)
                 {
-                    propertyValues.Add(new BindablePropertyToValue { Property = property, Value = value });
-                }
-                else
-                {
-                    var fallback = ValueContainer.FromDefault(property.Kind);
-                    Debug.LogWarning($"Failed to read value for property {property.Target.name}.{property.Path} of kind {property.Kind}. Defaulting to {fallback}.");
-                    propertyValues.Add(new BindablePropertyToValue { Property = property, Value = fallback });
+                    var readResult = binding.Read();
+
+                    if (readResult.Success)
+                    {
+                        propertyValues.Add(new BindablePropertyToValue { Property = property, Value = readResult.Value });
+                    }
+                    else
+                    {
+                        var fallback = ValueContainer.FromDefault(property.Kind);
+                        Debug.LogWarning($"Failed to read value for property {property.Target.name}.{property.Path} of kind {property.Kind}. Defaulting to {fallback}.");
+                        propertyValues.Add(new BindablePropertyToValue { Property = property, Value = fallback });
+                    }
                 }
             }
         }
@@ -329,65 +368,74 @@ namespace TimboJimbo.Styling
         /// </summary>
         public void SyncBaselineToCurrentValues()
         {
-            var binding = _cachedState.GetPropertyBindingCollection(gameObject, _styles, _baselineValues, _propertyConfigs);
-
-            for (int i = 0; i < _baselineValues.Count; i++)
+            using (var handle = _bindingCollectionManager.Acquire())
             {
-                var entry = _baselineValues[i];
-                if (binding.TryRead(entry.Property, out var liveValue))
-                {
-                    _baselineValues[i] = new BindablePropertyToValue { Property = entry.Property, Value = liveValue };
-                }
-                else
-                {
-                    Debug.LogWarning($"Failed to sync baseline value for property {entry.Property.Target?.name}.{entry.Property.Path} of kind {entry.Property.Kind}; keeping the existing stored value.");
-                }
-            }
+                var binding = handle.BindingCollection;
 
-            _cachedState.Invalidate();
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+                for (int i = 0; i < _baselineValues.Count; i++)
+                {
+                    var entry = _baselineValues[i];
+                    if (binding.TryRead(entry.Property, out var liveValue))
+                    {
+                        _baselineValues[i] = new BindablePropertyToValue { Property = entry.Property, Value = liveValue };
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Failed to sync baseline value for property {entry.Property.Target?.name}.{entry.Property.Path} of kind {entry.Property.Kind}; keeping the existing stored value.");
+                    }
+                }
+
+                _bindingCollectionManager.Invalidate();
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
         }
 
         public void CompleteTransitionImmediate()
         {
-            if(!_hasAppliedAnyStyling)
-                UpdateStylingState(UpdateType.RefreshStyleActivationsAndTargetValues);
-            
-            if (_isTransitioning)
+            using (_bindingCollectionManager.Acquire())
             {
-                _t = 1f;
-                _isTransitioning = false;
-                ApplyValueList(_targetValues);
+                if(!_hasAppliedAnyStyling)
+                    UpdateStylingState(UpdateType.RefreshStyleActivationsAndTargetValues);
+
+                if (_isTransitioning)
+                {
+                    _transitionProgress01 = 1f;
+                    _isTransitioning = false;
+                    ApplyValueList(_targetValues);
+                }
             }
         }
 
         public void OnStyleActivationsChanged(List<string> activeStyles)
         {
-            using (ListPool<string>.Get(out var oldActiveStyles))
-            using (ListPool<string>.Get(out var newActiveStyles))
+            using (_bindingCollectionManager.Acquire())
             {
-                foreach (var style in _styles)
+                using (ListPool<string>.Get(out var oldActiveStyles))
+                using (ListPool<string>.Get(out var newActiveStyles))
                 {
-                    if (_activeStyleNames.Contains(style.Name))
-                        oldActiveStyles.Add(style.Name);
+                    foreach (var style in _styles)
+                    {
+                        if (_activeStyleNames.Contains(style.Name))
+                            oldActiveStyles.Add(style.Name);
+                    }
+
+                    _activeStyleNames.Clear();
+                    for (int i = 0; i < activeStyles.Count; i++)
+                        _activeStyleNames.Add(activeStyles[i]);
+
+                    foreach (var style in _styles)
+                    {
+                        if (_activeStyleNames.Contains(style.Name))
+                            newActiveStyles.Add(style.Name);
+                    }
+
+                    // No change in styles we actually care about!
+                    if (Util.ListContentsAreEqual(oldActiveStyles, newActiveStyles))
+                        return;
                 }
 
-                _activeStyleNames.Clear();
-                for (int i = 0; i < activeStyles.Count; i++)
-                    _activeStyleNames.Add(activeStyles[i]);
-
-                foreach (var style in _styles)
-                {
-                    if (_activeStyleNames.Contains(style.Name))
-                        newActiveStyles.Add(style.Name);
-                }
-
-                // No change in styles we actually care about!
-                if (Util.ListContentsAreEqual(oldActiveStyles, newActiveStyles))
-                    return;
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
             }
-
-            UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
         }
 
         private void UpdateStylingState(UpdateType updateType)
@@ -438,7 +486,7 @@ namespace TimboJimbo.Styling
 
             if (applyInstantly)
             {
-                _t = 1f;
+                _transitionProgress01 = 1f;
                 _isTransitioning = false;
 
                 Util.Copy(source: _targetValues, destination: _fromValues);
@@ -450,7 +498,7 @@ namespace TimboJimbo.Styling
 
             if(resetAnimationState)
             {
-                _t = 0f;
+                _transitionProgress01 = 0f;
                 _isTransitioning = true;
                 
                 _currentValues.Clear();
@@ -513,11 +561,14 @@ namespace TimboJimbo.Styling
 
         private void ApplyValueList(List<BindablePropertyToValue> values)
         {
-            var binding = _cachedState.GetPropertyBindingCollection(gameObject, _styles, _baselineValues, _propertyConfigs);
-            using (var writer = binding.StartBulkWriteScope())
+            using (var handle = _bindingCollectionManager.Acquire())
             {
-                for (int i = 0; i < values.Count; i++)
-                    writer.TryWrite(values[i].Property, values[i].Value);
+                var binding = handle.BindingCollection;
+                using (var writer = binding.StartBulkWriteScope())
+                {
+                    for (int i = 0; i < values.Count; i++)
+                        writer.TryWrite(values[i].Property, values[i].Value);
+                }
             }
 
             Util.Copy(source: values, destination: _currentValues);
@@ -560,7 +611,7 @@ namespace TimboJimbo.Styling
             }
             
             if(changed)
-                _cachedState.Invalidate();
+                _bindingCollectionManager.Invalidate();
         }
 
         private void PruneUnusedBaselineAndConfigs()
@@ -595,10 +646,9 @@ namespace TimboJimbo.Styling
                 }
 
                 if (changed)
-                    _cachedState.Invalidate();
+                    _bindingCollectionManager.Invalidate();
             }
         }
-
 
         private static float OutCubic(float t) => 1f - Mathf.Pow(1f - t, 3f);
 
@@ -675,73 +725,112 @@ namespace TimboJimbo.Styling
             }
         }
 
-
-        private class CachedState : IDisposable
+        private class BindingCollectionManager
         {
-            private readonly List<BindableProperty> _allPropertiesList = new List<BindableProperty>();
-            private readonly HashSet<BindableProperty> _allPropertiesHashSet = new HashSet<BindableProperty>(BindablePropertyEqualityComparer.Instance);
-            private PropertyBindingCollection _activeBindingCollection;
-            private bool _needsRebuild = true;
+            private readonly StyleSheet _owner;
+            private PropertyBindingCollection _bindingCollection;
+            private int _handleCount;
+            private bool _setup = true;
 
-            public List<BindableProperty> GetAllProperties(GameObject root, List<Style> styles, List<BindablePropertyToValue> baseline, List<StylePropertyConfig> configs)
+            public BindingCollectionManager(StyleSheet owner) { _owner = owner; }
+
+            public BindingCollectionHandle Acquire()
             {
-                EnsureBuilt(root, styles, baseline, configs);
-                return _allPropertiesList;
+                _handleCount++;
+                return new BindingCollectionHandle(this);
             }
 
-            public PropertyBindingCollection GetPropertyBindingCollection(GameObject root, List<Style> styles, List<BindablePropertyToValue> baseline, List<StylePropertyConfig> configs)
-            {
-                EnsureBuilt(root, styles, baseline, configs);
-                return _activeBindingCollection;
-            }
+            public void AcquirePersistent() => _handleCount++;
+            public void ReleasePersistent() => Release();
 
-            public void Invalidate()
-            {
-                _needsRebuild = true;
-            }
+            public void Invalidate() => _setup = true;
 
-            private void EnsureBuilt(GameObject root, List<Style> styles, List<BindablePropertyToValue> baseline, List<StylePropertyConfig> configs)
+            private void Release()
             {
-                if (!_needsRebuild) return;
-                TearDown();
-
-                for (int i = 0; i < baseline.Count; i++)
+                _handleCount--;
+                if (_handleCount <= 0)
                 {
-                    if (_allPropertiesHashSet.Add(baseline[i].Property))
-                        _allPropertiesList.Add(baseline[i].Property);
+                    _handleCount = 0;
+                    CleanUp();
                 }
+            }
 
-                for (int s = 0; s < styles.Count; s++)
+            private void EnsureSetup()
+            {
+                if (!_setup) return;
+                CleanUp();
+
+                var baseline = _owner._baselineValues;
+                var styles = _owner._styles;
+                var configs = _owner._propertyConfigs;
+
+                using (HashSetPool<BindableProperty>.Get(out var _allPropertiesHashSet))
+                using (ListPool<BindableProperty>.Get(out var _allPropertiesList))
                 {
-                    var style = styles[s];
-                    for (int p = 0; p < style.PropertyValues.Count; p++)
+                    for (int i = 0; i < baseline.Count; i++)
                     {
-                        var prop = style.PropertyValues[p].Property;
-                        if (_allPropertiesHashSet.Add(prop))
-                            _allPropertiesList.Add(prop);
+                        if (_allPropertiesHashSet.Add(baseline[i].Property))
+                            _allPropertiesList.Add(baseline[i].Property);
+                    }
+
+                    for (int s = 0; s < styles.Count; s++)
+                    {
+                        var style = styles[s];
+                        for (int p = 0; p < style.PropertyValues.Count; p++)
+                        {
+                            var prop = style.PropertyValues[p].Property;
+                            if (_allPropertiesHashSet.Add(prop))
+                                _allPropertiesList.Add(prop);
+                        }
+                    }
+
+                    for (int c = 0; c < configs.Count; c++)
+                    {
+                        if (_allPropertiesHashSet.Add(configs[c].Property))
+                            _allPropertiesList.Add(configs[c].Property);
+                    }
+
+                    _bindingCollection = PropertyBindingCollection.Bind(_owner.gameObject, _allPropertiesList);
+                    _setup = false;
+                }
+            }
+
+            private void CleanUp()
+            {
+                _bindingCollection?.Dispose();
+                _bindingCollection = null;
+                _setup = true;
+            }
+
+            public struct BindingCollectionHandle : IDisposable
+            {
+                private BindingCollectionManager _lifetime;
+                internal BindingCollectionHandle(BindingCollectionManager lifetime) { _lifetime = lifetime; }
+
+                public PropertyBindingCollection BindingCollection
+                {
+                    get
+                    {
+                        ThrowIfDisposed();
+                        _lifetime.EnsureSetup();
+                        return _lifetime._bindingCollection;
                     }
                 }
 
-                for (int c = 0; c < configs.Count; c++)
+                public void Dispose()
                 {
-                    if (_allPropertiesHashSet.Add(configs[c].Property))
-                        _allPropertiesList.Add(configs[c].Property);
+                    if (_lifetime != null)
+                    {
+                        _lifetime.Release();
+                        _lifetime = null;
+                    }
                 }
 
-                _activeBindingCollection = PropertyBindingCollection.Bind(root, _allPropertiesList);
-                _needsRebuild = false;
+                private void ThrowIfDisposed()
+                {
+                    if (_lifetime == null) throw new ObjectDisposedException(nameof(BindingCollectionHandle));
+                }
             }
-
-            private void TearDown()
-            {
-                _allPropertiesList.Clear();
-                _allPropertiesHashSet.Clear();
-                _activeBindingCollection?.Dispose();
-                _activeBindingCollection = null;
-                _needsRebuild = true;
-            }
-
-            public void Dispose() => TearDown();
         }
 
         private enum UpdateType
