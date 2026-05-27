@@ -6,7 +6,8 @@
 	"unityRelease": "0f1",
 	"description": "todo",
 	"dependencies": {
-		"com.unity.test-framework": "1.6.0"
+		"com.unity.test-framework": "1.6.0",
+		"com.timbojimbo.propertybindings": "0.1.0"
 	},
 	"author": {
 		"name": "Timbo Jimbo",
