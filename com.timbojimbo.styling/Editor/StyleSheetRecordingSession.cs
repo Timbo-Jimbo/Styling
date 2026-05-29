@@ -19,6 +19,7 @@ namespace TimboJimbo.Styling.Editor
 		public static bool IsRecording { get; private set; }
 		public static StyleSheet Target { get; private set; }
 		public static bool IsCreatingNew { get; private set; }
+		public static bool IsEditingBaseline { get; private set; }
 		public static string EditingStyleName { get; set; }
 
 		private static PropertyBindingCollection _collection;
@@ -87,6 +88,25 @@ namespace TimboJimbo.Styling.Editor
 			};
 		}
 
+		public static void StartEditingBaseline(StyleSheet target)
+		{
+			if (target == null || IsRecording)
+				return;
+
+			BeginSession(target);
+			IsCreatingNew = false;
+			IsEditingBaseline = true;
+			_editingOriginalName = null;
+			EditingStyleName = "Baseline";
+
+			// BeginSession already applied an empty override (baseline view); just start tracking.
+			EditorApplication.delayCall += () =>
+			{
+				if (IsRecording && _tracker != null)
+					_tracker.StartDetecting(OnTrackerEdit);
+			};
+		}
+
 		public static void SaveAndStop()
 		{
 			if (!IsRecording || Target == null)
@@ -109,7 +129,12 @@ namespace TimboJimbo.Styling.Editor
 				for (int i = 0; i < edits.Count; i++)
 					propertiesForStyle.Add(edits[i].BindableProperty);
 
-				if (IsCreatingNew)
+				if (IsEditingBaseline)
+				{
+					Undo.RecordObject(Target, "Edit Baseline");
+					Target.EditBaseline(propertiesForStyle, postEditValues);
+				}
+				else if (IsCreatingNew)
 				{
 					var name = (EditingStyleName ?? string.Empty).Trim();
 					if (string.IsNullOrEmpty(name))
@@ -192,6 +217,7 @@ namespace TimboJimbo.Styling.Editor
 
 			IsRecording = false;
 			IsCreatingNew = false;
+			IsEditingBaseline = false;
 			EditingStyleName = null;
 			Target = null;
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using TimboJimbo.PropertyBindings;
 using TimboJimbo.PropertyBindings.Editor.Utility;
 using UnityEditor;
@@ -16,14 +17,14 @@ namespace TimboJimbo.Styling.Editor
 		private StyleSheet _sheet;
 		private StylingOverride _previewOverride;
 
-		private readonly Dictionary<string, PropertyTable> _styleTables = new Dictionary<string, PropertyTable>();
+		private PropertyTable _table;
 		private readonly List<Rect> _previewRects = new List<Rect>();
 		private readonly List<string> _previewRectNames = new List<string>();
 
 		private bool _isPreviewing;
 		private string _previewStyleName;
 
-		private static GUIStyle s_previewChipText;
+		private static GUIStyle PreviewChipText;
 
 		private void OnEnable()
 		{
@@ -33,7 +34,7 @@ namespace TimboJimbo.Styling.Editor
 		private void OnDisable()
 		{
 			EndPreview();
-			DisposeTables();
+			DisposeTable();
 		}
 
 		public override void OnInspectorGUI()
@@ -104,11 +105,11 @@ namespace TimboJimbo.Styling.Editor
 
 			if (isThisRecording)
 			{
-				EditorGUILayout.HelpBox(
-					StyleSheetRecordingSession.IsCreatingNew
-						? $"Creating '{StyleSheetRecordingSession.EditingStyleName}' — make changes in the Scene View."
-						: $"Editing '{StyleSheetRecordingSession.EditingStyleName}' — make changes in the Scene View.",
-					MessageType.Info);
+				string label = StyleSheetRecordingSession.IsEditingBaseline
+					? "Editing baseline"
+					: (StyleSheetRecordingSession.IsCreatingNew ? "Creating" : "Editing")
+					  + $" '{StyleSheetRecordingSession.EditingStyleName}'";
+				EditorGUILayout.HelpBox($"{label} — make changes in the Scene View.", MessageType.Info);
 			}
 			else if (isAnyRecording)
 			{
@@ -118,21 +119,51 @@ namespace TimboJimbo.Styling.Editor
 				EditorGUILayout.HelpBox($"Currently editing '{recordingTargetName}'. Finish that session first.", MessageType.Warning);
 			}
 
+			DrawStyleControlsList(isAnyRecording);
+
+			using (new EditorGUI.DisabledScope(isAnyRecording))
+			{
+				if (GUILayout.Button("Create Style", GUILayout.Height(24f)))
+					StyleSheetRecordingSession.StartCreating(_sheet);
+			}
+
+			EditorGUILayout.Space(6f);
+			DrawUnifiedTable(isAnyRecording);
+		}
+
+		private void DrawStyleControlsList(bool isAnyRecording)
+		{
+			// Baseline row.
+			using (new GUILayout.HorizontalScope(EditorStyles.helpBox))
+			{
+				GUILayout.Label("Baseline", EditorStyles.boldLabel, GUILayout.Width(160f));
+				GUILayout.FlexibleSpace();
+
+				using (new EditorGUI.DisabledScope(isAnyRecording))
+				{
+					DrawHoldPreviewButton(BaselinePreviewKey, "Preview");
+
+					if (GUILayout.Button("Sync from current", GUILayout.Width(130f)))
+					{
+						Undo.RecordObject(_sheet, "Sync Baseline to Active Values");
+						Undo.RegisterFullObjectHierarchyUndo(_sheet.gameObject, "Sync Baseline to Active Values");
+						_sheet.SyncBaselineToCurrentValues();
+						if (_sheet.IsTransitioning)
+							_sheet.CompleteTransitionImmediate();
+						EditorUtility.SetDirty(_sheet);
+					}
+
+					if (GUILayout.Button("Edit", GUILayout.Width(50f)))
+						StyleSheetRecordingSession.StartEditingBaseline(_sheet);
+				}
+			}
+
 			int removeAt = -1;
 			var styles = _sheet.Styles;
-
-			if (styles.Count == 0)
+			for (int i = 0; i < styles.Count; i++)
 			{
-				EditorGUILayout.HelpBox("No styles saved yet.", MessageType.None);
-			}
-			else
-			{
-				for (int i = 0; i < styles.Count; i++)
-				{
-					var styleProp = stylesProp.GetArrayElementAtIndex(i);
-					if (DrawStyle(styleProp, styles[i], i, isAnyRecording))
-						removeAt = i;
-				}
+				if (DrawStyleControlsRow(styles[i], i, isAnyRecording))
+					removeAt = i;
 			}
 
 			if (removeAt >= 0)
@@ -143,105 +174,62 @@ namespace TimboJimbo.Styling.Editor
 
 				Undo.RecordObject(_sheet, "Delete Style");
 				_sheet.DeleteStyle(styleName);
-				_styleTables.Remove(styleName);
 				EditorUtility.SetDirty(_sheet);
 			}
-
-			using (new EditorGUI.DisabledScope(isAnyRecording))
-			{
-				if (GUILayout.Button("Create Style", GUILayout.Height(24f)))
-					StyleSheetRecordingSession.StartCreating(_sheet);
-			}
-
-			PruneStaleTables();
 		}
 
-		private bool DrawStyle(SerializedProperty styleProp, Style style, int styleIndex, bool isAnyRecording)
+		private bool DrawStyleControlsRow(Style style, int styleIndex, bool isAnyRecording)
 		{
 			bool requestDelete = false;
 
-			using (new GUILayout.VerticalScope(EditorStyles.helpBox))
+			using (new GUILayout.HorizontalScope(EditorStyles.helpBox))
 			{
-				using (new GUILayout.HorizontalScope())
+				using (new EditorGUI.DisabledScope(isAnyRecording))
 				{
-					var foldoutRect = GUILayoutUtility.GetRect(13f, EditorGUIUtility.singleLineHeight, GUILayout.Width(13f));
-                    foldoutRect.x += 13f;
-                    
-                    Foldouts.Draw(
-                        foldoutRect,
-                        styleProp,
-                        GUIContent.none,
-                        toggleOnLabelClick: true
-                    );
-
-					using (new EditorGUI.DisabledScope(isAnyRecording))
+					EditorGUI.BeginChangeCheck();
+					string newName = EditorGUILayout.TextField(style.Name, GUILayout.Width(160f));
+					if (EditorGUI.EndChangeCheck())
 					{
-						EditorGUI.BeginChangeCheck();
-						string newName = EditorGUILayout.TextField(style.Name);
-						if (EditorGUI.EndChangeCheck())
+						newName = newName.Trim();
+						if (!string.IsNullOrWhiteSpace(newName)
+							&& newName != style.Name
+							&& !StyleNameExists(newName))
 						{
-							newName = newName.Trim();
-							if (!string.IsNullOrWhiteSpace(newName)
-								&& newName != style.Name
-								&& !StyleNameExists(newName))
-							{
-								Undo.RecordObject(_sheet, "Rename Style");
-								var oldName = style.Name;
-								_sheet.RenameStyle(oldName, newName);
-
-								if (_styleTables.TryGetValue(oldName, out var table))
-								{
-									_styleTables.Remove(oldName);
-									_styleTables[newName] = table;
-								}
-
-								EditorUtility.SetDirty(_sheet);
-							}
-						}
-
-						DrawStyleHoldPreviewButton(style.Name);
-
-						if (GUILayout.Button("Edit", GUILayout.Width(50f)))
-							StyleSheetRecordingSession.StartEditing(_sheet, styleIndex);
-
-						if (GUILayout.Button("Delete", GUILayout.Width(60f)))
-							requestDelete = true;
-					}
-				}
-
-				if (styleProp.isExpanded)
-				{
-					if (style.PropertyValues.Count == 0)
-					{
-						EditorGUILayout.HelpBox("This style is empty — it has no property overrides yet.", MessageType.None);
-					}
-					else
-					{
-						using (new EditorGUI.DisabledScope(isAnyRecording))
-						{
-							EnsureStyleTable(style.Name);
-							if (_styleTables.TryGetValue(style.Name, out var table))
-								DrawTable(table);
+							Undo.RecordObject(_sheet, "Rename Style");
+							_sheet.RenameStyle(style.Name, newName);
+							EditorUtility.SetDirty(_sheet);
 						}
 					}
+
+					GUILayout.FlexibleSpace();
+					DrawHoldPreviewButton(style.Name, "Preview");
+
+					if (GUILayout.Button("Edit", GUILayout.Width(50f)))
+						StyleSheetRecordingSession.StartEditing(_sheet, styleIndex);
+
+					if (GUILayout.Button("Delete", GUILayout.Width(60f)))
+						requestDelete = true;
 				}
 			}
 
 			return requestDelete;
 		}
 
-		private void DrawStyleHoldPreviewButton(string styleName)
-		{
-			var rect = GUILayoutUtility.GetRect(new GUIContent("Preview"), GUI.skin.button, GUILayout.Width(60f));
+		// Sentinel key used to identify the baseline preview button (cannot collide with style names).
+		private const string BaselinePreviewKey = "\0__baseline__";
 
-			bool isActive = _isPreviewing && _previewStyleName == styleName;
+		private void DrawHoldPreviewButton(string previewKey, string label)
+		{
+			var rect = GUILayoutUtility.GetRect(new GUIContent(label), GUI.skin.button, GUILayout.Width(60f));
+
+			bool isActive = _isPreviewing && _previewStyleName == previewKey;
 			if (Event.current.type == EventType.Repaint)
-				GUI.Toggle(rect, isActive, "Preview", GUI.skin.button);
+				GUI.Toggle(rect, isActive, label, GUI.skin.button);
 
 			if (!GUI.enabled)
 				return;
 
-			int controlId = GUIUtility.GetControlID($"StylePreview:{styleName}".GetHashCode(), FocusType.Passive, rect);
+			int controlId = GUIUtility.GetControlID($"StylePreview:{previewKey}".GetHashCode(), FocusType.Passive, rect);
 			var evt = Event.current;
 
 			switch (evt.GetTypeForControl(controlId))
@@ -250,7 +238,7 @@ namespace TimboJimbo.Styling.Editor
 					if (evt.button == 0 && rect.Contains(evt.mousePosition))
 					{
 						GUIUtility.hotControl = controlId;
-						BeginPreview(styleName);
+						BeginPreview(previewKey);
 						evt.Use();
 					}
 					break;
@@ -259,8 +247,8 @@ namespace TimboJimbo.Styling.Editor
 					if (GUIUtility.hotControl == controlId)
 					{
 						if (rect.Contains(evt.mousePosition))
-							BeginPreview(styleName);
-						else if (_previewStyleName == styleName)
+							BeginPreview(previewKey);
+						else if (_previewStyleName == previewKey)
 							EndPreview();
 
 						evt.Use();
@@ -271,7 +259,7 @@ namespace TimboJimbo.Styling.Editor
 					if (GUIUtility.hotControl == controlId && evt.button == 0)
 					{
 						GUIUtility.hotControl = 0;
-						if (_previewStyleName == styleName)
+						if (_previewStyleName == previewKey)
 							EndPreview();
 						evt.Use();
 					}
@@ -279,56 +267,59 @@ namespace TimboJimbo.Styling.Editor
 			}
 		}
 
-		private void EnsureStyleTable(string styleName)
+		private void DrawUnifiedTable(bool isAnyRecording)
 		{
-			int signature = ComputeStyleSignature(styleName);
-			if (_styleTables.TryGetValue(styleName, out var existing) && existing.Signature == signature)
+			EnsureTable();
+			if (_table == null)
 				return;
 
-			existing?.Dispose();
-			_styleTables[styleName] = PropertyTable.Create(_sheet, styleName, signature);
+			using (new EditorGUI.DisabledScope(isAnyRecording))
+			{
+				GUILayout.Space(4f);
+				float treeHeight = Mathf.Max(_table.TreeView.totalHeight, EditorGUIUtility.singleLineHeight);
+				var rect = GUILayoutUtility.GetRect(0f, 10000f, treeHeight, treeHeight);
+				_table.TreeView.OnGUI(rect);
+			}
 		}
 
-		private int ComputeStyleSignature(string styleName)
+		private void EnsureTable()
+		{
+			int signature = ComputeTableSignature();
+			if (_table != null && _table.Signature == signature)
+				return;
+
+			_table?.Dispose();
+			_table = PropertyTable.Create(_sheet, signature);
+		}
+
+		private int ComputeTableSignature()
 		{
 			unchecked
 			{
-				var style = _sheet.GetStyle(styleName);
 				int hash = 17;
-				for (int i = 0; i < style.PropertyValues.Count; i++)
-					hash = hash * 31 + style.PropertyValues[i].Property.GetHashCode();
+				var baseline = _sheet.BaselineValues;
+				hash = hash * 31 + baseline.Count;
+				for (int i = 0; i < baseline.Count; i++)
+					hash = hash * 31 + baseline[i].Property.GetHashCode();
+
+				var styles = _sheet.Styles;
+				hash = hash * 31 + styles.Count;
+				for (int s = 0; s < styles.Count; s++)
+				{
+					hash = hash * 31 + (styles[s].Name?.GetHashCode() ?? 0);
+					hash = hash * 31 + styles[s].PropertyValues.Count;
+					for (int p = 0; p < styles[s].PropertyValues.Count; p++)
+						hash = hash * 31 + styles[s].PropertyValues[p].Property.GetHashCode();
+				}
+
 				return hash;
 			}
 		}
 
-		private void PruneStaleTables()
+		private void DisposeTable()
 		{
-			using (HashSetPool<string>.Get(out var liveNames))
-			using (ListPool<string>.Get(out var stale))
-			{
-				for (int i = 0; i < _sheet.Styles.Count; i++)
-					liveNames.Add(_sheet.Styles[i].Name);
-
-				foreach (var key in _styleTables.Keys)
-				{
-					if (!liveNames.Contains(key))
-						stale.Add(key);
-				}
-
-				for (int i = 0; i < stale.Count; i++)
-				{
-					_styleTables[stale[i]].Dispose();
-					_styleTables.Remove(stale[i]);
-				}
-			}
-		}
-
-		private void DisposeTables()
-		{
-			foreach (var table in _styleTables.Values)
-				table.Dispose();
-
-			_styleTables.Clear();
+			_table?.Dispose();
+			_table = null;
 		}
 
 		private bool StyleNameExists(string name)
@@ -340,14 +331,6 @@ namespace TimboJimbo.Styling.Editor
 			}
 
 			return false;
-		}
-
-		private static void DrawTable(PropertyTable table)
-		{
-			GUILayout.Space(4f);
-			float treeHeight = Mathf.Max(table.TreeView.totalHeight, EditorGUIUtility.singleLineHeight);
-			var rect = GUILayoutUtility.GetRect(0f, 10000f, treeHeight, treeHeight);
-			table.TreeView.OnGUI(rect);
 		}
 
 		public override bool HasPreviewGUI() => _sheet != null;
@@ -468,15 +451,15 @@ namespace TimboJimbo.Styling.Editor
 			var innerRect = new Rect(rect.x + 1f, rect.y + 1f, Mathf.Max(0f, rect.width - 2f), Mathf.Max(0f, rect.height - 2f));
 			EditorGUI.DrawRect(innerRect, fill);
 
-			if (s_previewChipText == null)
+			if (PreviewChipText == null)
 			{
-				s_previewChipText = new GUIStyle(EditorStyles.label)
+				PreviewChipText = new GUIStyle(EditorStyles.label)
 				{
 					alignment = TextAnchor.MiddleCenter
 				};
 			}
 
-			GUI.Label(innerRect, styleName, s_previewChipText);
+			GUI.Label(innerRect, styleName, PreviewChipText);
 		}
 
 		private void DrawGameObjectScopeSection(Rect contentRect, float startY)
@@ -667,7 +650,7 @@ namespace TimboJimbo.Styling.Editor
 
 		internal void BeginPreview(string styleName)
 		{
-			if (string.IsNullOrWhiteSpace(styleName))
+			if (string.IsNullOrWhiteSpace(styleName) && styleName != BaselinePreviewKey)
 			{
 				EndPreview();
 				return;
@@ -677,7 +660,10 @@ namespace TimboJimbo.Styling.Editor
 				return;
 
 			_previewOverride?.Dispose();
-			_previewOverride = StylingSystem.StylingOverrideScope(_sheet.gameObject, new[] { styleName });
+			var activeStyles = styleName == BaselinePreviewKey
+				? System.Array.Empty<string>()
+				: new[] { styleName };
+			_previewOverride = StylingSystem.StylingOverrideScope(_sheet.gameObject, activeStyles);
 			_isPreviewing = true;
 			_previewStyleName = styleName;
 
@@ -712,47 +698,66 @@ namespace TimboJimbo.Styling.Editor
 				TreeView = treeView;
 			}
 
-			public static PropertyTable Create(StyleSheet sheet, string styleName, int signature)
+			public static PropertyTable Create(StyleSheet sheet, int signature)
 			{
 				var state = new TreeViewState<int>();
-				var columns = new[]
+
+				// Build column targets: [Property] [Baseline] [Style0] [Style1] ... [Interp]
+				var styles = sheet.Styles;
+				var targets = new ColumnTarget[1 + 1 + styles.Count + 1];
+				targets[0] = new ColumnTarget { Kind = ColumnTargetKind.Property };
+				targets[1] = new ColumnTarget { Kind = ColumnTargetKind.Baseline };
+				for (int i = 0; i < styles.Count; i++)
+					targets[2 + i] = new ColumnTarget { Kind = ColumnTargetKind.Style, StyleName = styles[i].Name };
+				targets[targets.Length - 1] = new ColumnTarget { Kind = ColumnTargetKind.Interp };
+
+				var columns = new MultiColumnHeaderState.Column[targets.Length];
+				columns[0] = new MultiColumnHeaderState.Column
 				{
-					new MultiColumnHeaderState.Column
+					headerContent = new GUIContent("Property"),
+					width = 220f,
+					minWidth = 120f,
+					autoResize = true,
+					canSort = false
+				};
+				columns[1] = new MultiColumnHeaderState.Column
+				{
+					headerContent = new GUIContent("Baseline"),
+					width = 140f,
+					minWidth = 80f,
+					autoResize = false,
+					canSort = false
+				};
+				for (int i = 0; i < styles.Count; i++)
+				{
+					columns[2 + i] = new MultiColumnHeaderState.Column
 					{
-						headerContent = new GUIContent("Property"),
-						width = 220f,
-						minWidth = 120f,
-						autoResize = true,
-						canSort = false
-					},
-					new MultiColumnHeaderState.Column
-					{
-						headerContent = new GUIContent("Value"),
-						width = 200f,
-						minWidth = 100f,
-						autoResize = true,
-						canSort = false
-					},
-					new MultiColumnHeaderState.Column
-					{
-						headerContent = new GUIContent("Interp"),
-						width = 110f,
-						minWidth = 60f,
-						maxWidth = 180f,
+						headerContent = new GUIContent(styles[i].Name),
+						width = 140f,
+						minWidth = 80f,
 						autoResize = false,
 						canSort = false
-					}
+					};
+				}
+				columns[columns.Length - 1] = new MultiColumnHeaderState.Column
+				{
+					headerContent = new GUIContent("Interp"),
+					width = 110f,
+					minWidth = 60f,
+					maxWidth = 180f,
+					autoResize = false,
+					canSort = false
 				};
 
 				var headerState = new MultiColumnHeaderState(columns);
-				var header = new MultiColumnHeader(headerState)
+				var header = new StyleTableMultiColumnHeader(headerState, baselineColumnIndex: 1)
 				{
 					canSort = false,
 					height = 22f
 				};
 				header.ResizeToFit();
 
-				var tree = new StyleSheetTreeView(state, header, sheet, styleName);
+				var tree = new StyleSheetTreeView(state, header, sheet, targets);
 				tree.Reload();
 				tree.ExpandAll();
 				return new PropertyTable(signature, state, headerState, tree);
@@ -760,6 +765,55 @@ namespace TimboJimbo.Styling.Editor
 
 			public void Dispose()
 			{
+			}
+		}
+
+		private sealed class StyleTableMultiColumnHeader : MultiColumnHeader
+		{
+			private static GUIStyle s_standardHeader;
+			private static GUIStyle s_italicHeader;
+			private readonly int _baselineColumnIndex;
+
+			public StyleTableMultiColumnHeader(MultiColumnHeaderState state, int baselineColumnIndex) : base(state)
+			{
+				_baselineColumnIndex = baselineColumnIndex;
+			}
+
+			protected override void ColumnHeaderGUI(MultiColumnHeaderState.Column column, Rect headerRect, int columnIndex)
+			{
+				if(Event.current.type == EventType.Repaint)
+				{
+					if (columnIndex == _baselineColumnIndex)
+					{
+						if (s_italicHeader == null)
+						{
+							s_italicHeader = new GUIStyle(DefaultStyles.columnHeader)
+							{
+								fontStyle = FontStyle.Italic,
+								alignment = TextAnchor.MiddleCenter
+							};
+						}
+
+						s_italicHeader.Draw(headerRect, column.headerContent, false, false, false, false);
+						return;
+					}
+					else if(columnIndex > _baselineColumnIndex)
+					{
+						if (s_standardHeader == null)
+						{
+							s_standardHeader = new GUIStyle(DefaultStyles.columnHeader)
+							{
+								fontStyle = FontStyle.Normal,
+								alignment = TextAnchor.MiddleCenter
+							};
+						}
+
+						s_standardHeader.Draw(headerRect, column.headerContent, false, false, false, false);
+						return;
+					}
+				}
+
+				base.ColumnHeaderGUI(column, headerRect, columnIndex);
 			}
 		}
 
@@ -772,28 +826,30 @@ namespace TimboJimbo.Styling.Editor
 			public Object Target;
 		}
 
+		internal enum ColumnTargetKind { Property, Baseline, Style, Interp }
+
+		internal struct ColumnTarget
+		{
+			public ColumnTargetKind Kind;
+			public string StyleName;
+		}
+
 		internal sealed class StyleSheetTreeView : TreeView<int>
 		{
-			private const int ColName = 0;
-			private const int ColValue = 1;
-			private const int ColInterp = 2;
-
 			private readonly StyleSheet _sheet;
-			private readonly string _styleName;
+			private readonly ColumnTarget[] _columnTargets;
 			private readonly Dictionary<int, NodeData> _nodes = new Dictionary<int, NodeData>();
 
-			public StyleSheetTreeView(TreeViewState<int> state, MultiColumnHeader header, StyleSheet sheet, string styleName)
+			public StyleSheetTreeView(TreeViewState<int> state, MultiColumnHeader header, StyleSheet sheet, ColumnTarget[] columnTargets)
 				: base(state, header)
 			{
 				_sheet = sheet;
-				_styleName = styleName;
+				_columnTargets = columnTargets;
 				showAlternatingRowBackgrounds = true;
 				rowHeight = 22f;
 				showBorder = false;
 				cellMargin = 2f;
 			}
-
-			private IReadOnlyList<BindablePropertyToValue> SourceList() => _sheet.GetStyle(_styleName).PropertyValues;
 
 			protected override TreeViewItem<int> BuildRoot()
 			{
@@ -801,8 +857,29 @@ namespace TimboJimbo.Styling.Editor
 				var items = new List<TreeViewItem<int>>();
 				_nodes.Clear();
 
-				var source = SourceList();
-				if (source.Count == 0)
+				// Union all properties across baseline + styles, preserving discovery order.
+				var allProperties = new List<BindableProperty>();
+				var seen = new HashSet<BindableProperty>();
+
+				var baseline = _sheet.BaselineValues;
+				for (int i = 0; i < baseline.Count; i++)
+				{
+					if (seen.Add(baseline[i].Property))
+						allProperties.Add(baseline[i].Property);
+				}
+
+				var styles = _sheet.Styles;
+				for (int s = 0; s < styles.Count; s++)
+				{
+					var pvs = styles[s].PropertyValues;
+					for (int p = 0; p < pvs.Count; p++)
+					{
+						if (seen.Add(pvs[p].Property))
+							allProperties.Add(pvs[p].Property);
+					}
+				}
+
+				if (allProperties.Count == 0)
 				{
 					SetupParentsAndChildrenFromDepths(root, items);
 					return root;
@@ -814,9 +891,9 @@ namespace TimboJimbo.Styling.Editor
 				var goComponentOrder = new Dictionary<GameObject, List<Component>>();
 				var componentProperties = new Dictionary<Component, List<BindableProperty>>();
 
-				for (int i = 0; i < source.Count; i++)
+				for (int i = 0; i < allProperties.Count; i++)
 				{
-					var property = source[i].Property;
+					var property = allProperties[i];
 					var component = property.Target as Component;
 					var gameObject = component != null ? component.gameObject : property.Target as GameObject;
 					if (gameObject == null)
@@ -900,41 +977,26 @@ namespace TimboJimbo.Styling.Editor
 				}
 			}
 
-			protected override void ContextClickedItem(int id)
-			{
-				if (!_nodes.TryGetValue(id, out var data) || data.Type != NodeType.Property)
-					return;
-
-				var menu = new GenericMenu();
-				menu.AddItem(new GUIContent($"Remove from '{_styleName}'"), false, () =>
-				{
-					Undo.RecordObject(_sheet, "Remove Style Override");
-					_sheet.RemoveStyleValue(_styleName, data.Property);
-					EditorUtility.SetDirty(_sheet);
-				});
-				menu.AddSeparator(string.Empty);
-				menu.AddItem(new GUIContent("Remove from all styles & baseline"), false, () =>
-				{
-					Undo.RecordObject(_sheet, "Remove Property");
-					_sheet.DeletePropertyFromAllStyles(data.Property);
-					EditorUtility.SetDirty(_sheet);
-				});
-				menu.ShowAsContext();
-				Event.current.Use();
-			}
-
 			private void DrawCell(Rect rect, TreeViewItem<int> item, int column, ref NodeData data)
 			{
-				switch (column)
+				if (column < 0 || column >= _columnTargets.Length)
+					return;
+
+				var target = _columnTargets[column];
+				switch (target.Kind)
 				{
-					case ColName:
+					case ColumnTargetKind.Property:
 						DrawNameCell(rect, item, ref data);
 						break;
-					case ColValue:
+					case ColumnTargetKind.Baseline:
 						if (data.Type == NodeType.Property)
-							DrawValueCell(rect, data.Property);
+							DrawBaselineValueCell(rect, data.Property);
 						break;
-					case ColInterp:
+					case ColumnTargetKind.Style:
+						if (data.Type == NodeType.Property)
+							DrawStyleValueCell(rect, target.StyleName, data.Property);
+						break;
+					case ColumnTargetKind.Interp:
 						if (data.Type == NodeType.Property)
 							DrawInterpCell(rect, data.Property);
 						break;
@@ -943,6 +1005,7 @@ namespace TimboJimbo.Styling.Editor
 
 			private void DrawNameCell(Rect rect, TreeViewItem<int> item, ref NodeData data)
 			{
+				HandleNameCellContextClick(rect, item, data);
 				rect.xMin += GetContentIndent(item);
 
 				if (data.Type != NodeType.Property && data.Target != null)
@@ -961,9 +1024,118 @@ namespace TimboJimbo.Styling.Editor
 				EditorGUI.LabelField(rect, item.displayName, labelStyle);
 			}
 
-			private void DrawValueCell(Rect rect, BindableProperty property)
+			private void HandleNameCellContextClick(Rect rect, TreeViewItem<int> item, NodeData data)
 			{
-				var source = SourceList();
+				var evt = Event.current;
+				if (!IsContextMenuEvent(evt, rect))
+					return;
+
+				if (!TryGetNodeProperties(data, out var propertiesToRemove))
+					return;
+
+				var menu = new GenericMenu();
+				menu.AddItem(new GUIContent(GetRemoveLabel(item, data)), false, () => RemoveNodeProperties(propertiesToRemove, data));
+				menu.ShowAsContext();
+				evt.Use();
+			}
+
+			private bool TryGetNodeProperties(NodeData data, out BindableProperty[] properties)
+			{
+				using (ListPool<BindableProperty>.Get(out var buffer))
+				{
+					switch (data.Type)
+					{
+						case NodeType.Property:
+							buffer.Add(data.Property);
+							break;
+
+						case NodeType.Component:
+							CollectMatchingProperties(buffer, property => property.Target == data.Target);
+							break;
+
+						case NodeType.GameObject:
+							CollectMatchingProperties(buffer, property =>
+							{
+								if (property.Target == data.Target)
+									return true;
+
+								return property.Target is Component component && component.gameObject == data.Target;
+							});
+							break;
+					}
+
+					if (buffer.Count == 0)
+					{
+						properties = null;
+						return false;
+					}
+
+					properties = buffer.ToArray();
+					return true;
+				}
+			}
+
+			private void CollectMatchingProperties(List<BindableProperty> output, Predicate<BindableProperty> predicate)
+			{
+				foreach (var node in _nodes.Values)
+				{
+					if (node.Type == NodeType.Property && predicate(node.Property))
+						output.Add(node.Property);
+				}
+			}
+
+			private string GetRemoveLabel(TreeViewItem<int> item, NodeData data)
+			{
+				return $"Remove '{GetNodeDisplayName(item, data)}'";
+			}
+
+			private string GetNodeDisplayName(TreeViewItem<int> item, NodeData data)
+			{
+				switch (data.Type)
+				{
+					case NodeType.GameObject:
+						return !string.IsNullOrEmpty(data.Target?.name) ? data.Target.name : item.displayName;
+
+					case NodeType.Component:
+						return data.Target != null
+							? ObjectNames.NicifyVariableName(data.Target.GetType().Name)
+							: item.displayName;
+
+					case NodeType.Property:
+					default:
+						return item.displayName;
+				}
+			}
+
+			private void RemoveNodeProperties(BindableProperty[] properties, NodeData data)
+			{
+				if (properties == null || properties.Length == 0)
+					return;
+
+				Undo.RecordObject(_sheet, GetUndoLabel(data));
+				for (int i = 0; i < properties.Length; i++)
+					_sheet.RemoveProperty(properties[i]);
+
+				EditorUtility.SetDirty(_sheet);
+			}
+
+			private string GetUndoLabel(NodeData data)
+			{
+				switch (data.Type)
+				{
+					case NodeType.GameObject:
+						return "Remove GameObject Properties";
+					case NodeType.Component:
+						return "Remove Component Properties";
+					case NodeType.Property:
+					default:
+						return "Remove Property";
+				}
+			}
+
+			private void DrawBaselineValueCell(Rect rect, BindableProperty property)
+			{
+				var source = _sheet.BaselineValues;
 				int index = -1;
 				for (int i = 0; i < source.Count; i++)
 				{
@@ -976,22 +1148,222 @@ namespace TimboJimbo.Styling.Editor
 
 				if (index < 0)
 				{
-					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+					DrawMissingCell(rect, property, isBaseline: true, styleName: null);
 					return;
 				}
 
 				var entry = source[index];
+				HandleCellContextClick(rect, property, isBaseline: true, styleName: null, isPresent: true, currentValue: entry.Value);
 				EditorGUI.BeginChangeCheck();
-				var newValue = PropertyBindingsEditorGUI.ValueContainerField(rect, entry.Value);
+				var newValue = PropertyBindingsEditorGUI.ValueContainerField(rect, property, entry.Value);
 				if (EditorGUI.EndChangeCheck())
 				{
-					Undo.RecordObject(_sheet, "Edit Style Value");
-					Undo.RegisterFullObjectHierarchyUndo(_sheet.gameObject, "Edit Style Value");
-					_sheet.TryUpdateStyleValue(_styleName, property, newValue);
+					Undo.RecordObject(_sheet, "Edit Baseline Value");
+					Undo.RegisterFullObjectHierarchyUndo(_sheet.gameObject, "Edit Baseline Value");
+					_sheet.SetBaselineValue(property, newValue);
 					if (_sheet.IsTransitioning)
 						_sheet.CompleteTransitionImmediate();
 					EditorUtility.SetDirty(_sheet);
 				}
+			}
+
+			private void DrawStyleValueCell(Rect rect, string styleName, BindableProperty property)
+			{
+				if (!_sheet.TryGetStyle(styleName, out var style))
+					return;
+
+				int index = -1;
+				for (int i = 0; i < style.PropertyValues.Count; i++)
+				{
+					if (style.PropertyValues[i].Property.Equals(property))
+					{
+						index = i;
+						break;
+					}
+				}
+
+				if (index < 0)
+				{
+					DrawMissingCell(rect, property, isBaseline: false, styleName: styleName);
+					return;
+				}
+
+				var entry = style.PropertyValues[index];
+				HandleCellContextClick(rect, property, isBaseline: false, styleName: styleName, isPresent: true, currentValue: entry.Value);
+				EditorGUI.BeginChangeCheck();
+				var newValue = PropertyBindingsEditorGUI.ValueContainerField(rect, property, entry.Value);
+				if (EditorGUI.EndChangeCheck())
+				{
+					Undo.RecordObject(_sheet, "Edit Style Value");
+					Undo.RegisterFullObjectHierarchyUndo(_sheet.gameObject, "Edit Style Value");
+					var seed = TryGetBaselineValue(property, out var bv) ? bv : ValueContainer.FromDefault(property.Kind);
+					_sheet.SetStyleValue(styleName, property, newValue, seed);
+					if (_sheet.IsTransitioning)
+						_sheet.CompleteTransitionImmediate();
+					EditorUtility.SetDirty(_sheet);
+				}
+			}
+
+			private static GUIStyle s_inheritStyle;
+			private static GUIStyle s_missingBaselineStyle;
+
+			private void DrawMissingCell(Rect rect, BindableProperty property, bool isBaseline, string styleName)
+			{
+				if (isBaseline)
+				{
+					if (s_missingBaselineStyle == null)
+					{
+						s_missingBaselineStyle = new GUIStyle(EditorStyles.label)
+						{
+							alignment = TextAnchor.MiddleCenter,
+							normal = { textColor = new Color(0.95f, 0.75f, 0.2f, 1f) }
+						};
+					}
+
+					EditorGUI.LabelField(rect,
+						new GUIContent("⚠️ Missing", "Baseline is missing a value for this property. Right-click to add one."),
+						s_missingBaselineStyle);
+				}
+				else
+				{
+					if (s_inheritStyle == null)
+					{
+						s_inheritStyle = new GUIStyle(EditorStyles.miniLabel)
+						{
+							fontStyle = FontStyle.Italic,
+							alignment = TextAnchor.MiddleCenter,
+							normal = { textColor = new Color(0.6f, 0.6f, 0.6f, 1f) }
+						};
+					}
+
+					EditorGUI.LabelField(rect, "inherit", s_inheritStyle);
+				}
+
+				HandleCellContextClick(rect, property, isBaseline, styleName, isPresent: false, currentValue: default);
+			}
+
+			private void HandleCellContextClick(Rect rect, BindableProperty property, bool isBaseline, string styleName, bool isPresent, ValueContainer currentValue)
+			{
+				var evt = Event.current;
+				if (!IsContextMenuEvent(evt, rect))
+					return;
+
+				var menu = new GenericMenu();
+				//copy paste section
+				AddClipboardMenuItems(menu, property, isBaseline, styleName, isPresent, currentValue);
+
+				//add/remove from THIS section
+				if (isBaseline)
+				{
+					if (!isPresent)
+					{
+						menu.AddSeparator(string.Empty);
+						menu.AddItem(new GUIContent("Add to Baseline"), false, () =>
+						{
+							var defaultValue = ValueContainer.FromDefault(property.Kind);
+							Undo.RecordObject(_sheet, "Add Baseline Value");
+							_sheet.SetBaselineValue(property, defaultValue);
+							EditorUtility.SetDirty(_sheet);
+						});
+					}
+				}
+				else
+				{
+					menu.AddSeparator(string.Empty);
+
+					if(isPresent)
+					{
+						menu.AddItem(new GUIContent($"Remove from '{styleName}'"), false, () =>
+						{
+							Undo.RecordObject(_sheet, "Remove Style Property");
+							_sheet.RemoveStyleValue(styleName, property);
+							EditorUtility.SetDirty(_sheet);
+						});
+					}
+					else
+					{
+						var name = styleName;
+						menu.AddItem(new GUIContent($"Add to '{name}'"), false, () =>
+						{
+							var value = TryGetBaselineValue(property, out var bv) ? bv : ValueContainer.FromDefault(property.Kind);
+							Undo.RecordObject(_sheet, "Add Style Value");
+							_sheet.SetStyleValue(name, property, value, value);
+							EditorUtility.SetDirty(_sheet);
+						});
+					}
+				}
+
+
+				menu.ShowAsContext();
+				evt.Use();
+			}
+
+			private void AddClipboardMenuItems(GenericMenu menu, BindableProperty property, bool isBaseline, string styleName, bool isPresent, ValueContainer currentValue)
+			{
+				if (isPresent)
+				{
+					menu.AddItem(new GUIContent("Copy"), false, () => CopyPaste.SetValueClipboard(currentValue));
+				}
+				else
+				{
+					menu.AddDisabledItem(new GUIContent("Copy"));
+				}
+
+				if (CopyPaste.TryGetClipboardValue(property.Kind, out var clipboardValue))
+				{
+					menu.AddItem(new GUIContent("Paste"), false, () => ApplyCellValue(property, isBaseline, styleName, clipboardValue));
+				}
+				else
+				{
+					menu.AddDisabledItem(new GUIContent("Paste"));
+				}
+			}
+
+			private void ApplyCellValue(BindableProperty property, bool isBaseline, string styleName, ValueContainer value)
+			{
+				if (isBaseline)
+				{
+					Undo.RecordObject(_sheet, "Paste Baseline Value");
+					Undo.RegisterFullObjectHierarchyUndo(_sheet.gameObject, "Paste Baseline Value");
+					_sheet.SetBaselineValue(property, value);
+				}
+				else
+				{
+					Undo.RecordObject(_sheet, "Paste Style Value");
+					Undo.RegisterFullObjectHierarchyUndo(_sheet.gameObject, "Paste Style Value");
+					var seed = TryGetBaselineValue(property, out var baselineValue) ? baselineValue : ValueContainer.FromDefault(property.Kind);
+					_sheet.SetStyleValue(styleName, property, value, seed);
+				}
+
+				if (_sheet.IsTransitioning)
+					_sheet.CompleteTransitionImmediate();
+
+				EditorUtility.SetDirty(_sheet);
+			}
+
+			private static bool IsContextMenuEvent(Event evt, Rect rect)
+			{
+				if (!rect.Contains(evt.mousePosition))
+					return false;
+
+				return evt.type == EventType.ContextClick
+					|| (evt.type == EventType.MouseDown && evt.button == 1);
+			}
+
+			private bool TryGetBaselineValue(BindableProperty property, out ValueContainer value)
+			{
+				var baseline = _sheet.BaselineValues;
+				for (int i = 0; i < baseline.Count; i++)
+				{
+					if (baseline[i].Property.Equals(property))
+					{
+						value = baseline[i].Value;
+						return true;
+					}
+				}
+
+				value = default;
+				return false;
 			}
 
 			private void DrawInterpCell(Rect rect, BindableProperty property)
@@ -1128,5 +1500,29 @@ namespace TimboJimbo.Styling.Editor
                 return property.serializedObject.targetObject.GetInstanceID() + ":" + property.propertyPath;
             }
         }
+		
+		private static class CopyPaste
+		{
+			private static ValueContainer _valueClipboard;
+			private static bool _hasValueClipboard;
+
+			public static void SetValueClipboard(ValueContainer value)
+			{
+				_valueClipboard = value;
+				_hasValueClipboard = true;
+			}
+
+			public static bool TryGetClipboardValue(ValueKind kind, out ValueContainer value)
+			{
+				if (_hasValueClipboard && _valueClipboard.Kind == kind)
+				{
+					value = _valueClipboard;
+					return true;
+				}
+
+				value = default;
+				return false;
+			}
+		}
 	}
 }

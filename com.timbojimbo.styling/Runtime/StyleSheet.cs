@@ -214,21 +214,50 @@ namespace TimboJimbo.Styling
             {
                 foreach (var property in propertiesForStyle)
                 {
-                    if (!Util.TryFindIndexByProperty(postEditPropertyValues, property, out var postIdx))
-                    {
-                        //this can never happen because of the earlier check,
-                        throw new InvalidOperationException("Unexpected error: property not found in post-edit values.");
-                    }
-
-                    var post = postEditPropertyValues[postIdx];
-
-                    if (!Util.TryFindIndexByProperty(style.PropertyValues, property, out var existingIdx))
-                        style.PropertyValues.Add(post);
-                    else
-                        style.PropertyValues[existingIdx] = post;
+                    Util.TryFindIndexByProperty(postEditPropertyValues, property, out var postIdx);
+                    Util.Upsert(style.PropertyValues, property, postEditPropertyValues[postIdx].Value);
                 }
 
                 EnsurePropertiesExistInBaselineAndConfig(propertiesForStyle, preEditPropertyValues);
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
+        }
+
+        /// <summary>
+        /// Adds or overwrites the given properties on the baseline. Properties not listed are untouched.
+        /// </summary>
+        public void EditBaseline(
+            List<BindableProperty> propertiesForBaseline,
+            List<BindablePropertyToValue> postEditPropertyValues)
+        {
+            // pre-check to ensure all properties have post-edit values before making any changes
+            foreach (var property in propertiesForBaseline)
+            {
+                if (!Util.ContainsProperty(postEditPropertyValues, property))
+                    throw new ArgumentException($"Post-edit property values must contain an entry for each property in the baseline. Missing entry for {property.Target.name}.{property.Path} of kind {property.Kind}.");
+            }
+
+            using (_bindingCollectionManager.Acquire())
+            {
+                bool addedProperty = false;
+                foreach (var property in propertiesForBaseline)
+                {
+                    Util.TryFindIndexByProperty(postEditPropertyValues, property, out var postIdx);
+                    var post = postEditPropertyValues[postIdx];
+
+                    if (Util.Upsert(_baselineValues, property, post.Value))
+                        addedProperty = true;
+
+                    if (!Util.ContainsProperty(_propertyConfigs, property))
+                    {
+                        _propertyConfigs.Add(new StylePropertyConfig { Property = property, Interpolation = default });
+                        addedProperty = true;
+                    }
+                }
+
+                if (addedProperty)
+                    _bindingCollectionManager.Invalidate();
+
                 UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
             }
         }
@@ -251,12 +280,11 @@ namespace TimboJimbo.Styling
             using (_bindingCollectionManager.Acquire())
             {
                 _styles.Remove(style);
-                PruneUnusedBaselineAndConfigs();
                 UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
             }
         }
 
-        public void DeletePropertyFromAllStyles(BindableProperty property)
+        public void RemoveProperty(BindableProperty property)
         {
             using (_bindingCollectionManager.Acquire())
             {
@@ -276,25 +304,29 @@ namespace TimboJimbo.Styling
                 UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
             }
         }
-        
+
         /// <summary>
-        /// Updates a single property on a single style. Does not touch baseline or other styles.
+        /// Adds or updates a single property on a single style. If baseline does not already contain an entry
+        /// for this property, <paramref name="baselineSeedValue"/> is used to seed it (baseline must always
+        /// contain a value for every property referenced by any style).
         /// </summary>
-        /// <returns>True if the style entry was updated; false if it was not found.</returns>
-        public bool TryUpdateStyleValue(string styleName, BindableProperty property, ValueContainer value)
+        public void SetStyleValue(string styleName, BindableProperty property, ValueContainer value, ValueContainer baselineSeedValue)
         {
             var style = GetStyle(styleName);
 
-            if (!Util.TryFindIndexByProperty(style.PropertyValues, property, out var idx))
-                return false;
-
             using (_bindingCollectionManager.Acquire())
             {
-                style.PropertyValues[idx] = new BindablePropertyToValue { Property = property, Value = value };
+                Util.Upsert(style.PropertyValues, property, value);
+                using (ListPool<BindableProperty>.Get(out var propertiesForStyle))
+                using (ListPool<BindablePropertyToValue>.Get(out var preEditPropertyValues))
+                {
+                    propertiesForStyle.Add(property);
+                    preEditPropertyValues.Add(new BindablePropertyToValue { Property = property, Value = baselineSeedValue });
+                    EnsurePropertiesExistInBaselineAndConfig(propertiesForStyle, preEditPropertyValues);
+                }
+
                 UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
             }
-
-            return true;
         }
 
         /// <summary>
@@ -310,6 +342,7 @@ namespace TimboJimbo.Styling
             using (_bindingCollectionManager.Acquire())
             {
                 style.PropertyValues.RemoveAt(idx);
+                PruneUnusedPropertyConfigs();
                 UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
             }
 
@@ -317,21 +350,26 @@ namespace TimboJimbo.Styling
         }
 
         /// <summary>
-        /// Overwrites the baseline value for <paramref name="property"/>.
+        /// Adds or updates the baseline value for <paramref name="property"/>.
         /// </summary>
-        /// <returns>True if a baseline entry was updated; false if it was not found.</returns>
-        public bool TryUpdateBaselineValue(BindableProperty property, ValueContainer value)
+        public void SetBaselineValue(BindableProperty property, ValueContainer value)
         {
-            if (!Util.TryFindIndexByProperty(_baselineValues, property, out var idx))
-                return false;
-
             using (_bindingCollectionManager.Acquire())
             {
-                _baselineValues[idx] = new BindablePropertyToValue { Property = property, Value = value };
+                var addedBaselineEntry = Util.Upsert(_baselineValues, property, value);
+
+                if (!Util.ContainsProperty(_propertyConfigs, property))
+                {
+                    _propertyConfigs.Add(new StylePropertyConfig { Property = property, Interpolation = default });
+                    _bindingCollectionManager.Invalidate();
+                }
+                else if (addedBaselineEntry)
+                {
+                    _bindingCollectionManager.Invalidate();
+                }
+
                 UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
             }
-
-            return true;
         }
 
         /// <summary>
@@ -614,9 +652,9 @@ namespace TimboJimbo.Styling
                 _bindingCollectionManager.Invalidate();
         }
 
-        private void PruneUnusedBaselineAndConfigs()
+        private void PruneUnusedPropertyConfigs()
         {
-            // Prune unused baseline and configs:
+            // Prune orphaned interpolation configs.
             using(HashSetPool<BindableProperty>.Get(out var liveProperties))
             {
                 for (int s = 0; s < _styles.Count; s++)
@@ -626,16 +664,10 @@ namespace TimboJimbo.Styling
                         liveProperties.Add(style.PropertyValues[p].Property);
                 }
 
-                bool changed = false;
-                for (int i = _baselineValues.Count - 1; i >= 0; i--)
-                {
-                    if (!liveProperties.Contains(_baselineValues[i].Property))
-                    {
-                        _baselineValues.RemoveAt(i);
-                        changed = true;
-                    }
-                }
+                for (int b = 0; b < _baselineValues.Count; b++)
+                    liveProperties.Add(_baselineValues[b].Property);
 
+                bool changed = false;
                 for (int i = _propertyConfigs.Count - 1; i >= 0; i--)
                 {
                     if (!liveProperties.Contains(_propertyConfigs[i].Property))
@@ -722,6 +754,19 @@ namespace TimboJimbo.Styling
                 }
 
                 return true;
+            }
+
+            public static bool Upsert(List<BindablePropertyToValue> list, BindableProperty property, ValueContainer value)
+            {
+                var entry = new BindablePropertyToValue { Property = property, Value = value };
+                if (TryFindIndexByProperty(list, property, out var idx))
+                {
+                    list[idx] = entry;
+                    return false; // updated existing
+                }
+
+                list.Add(entry);
+                return true; // added new
             }
         }
 
