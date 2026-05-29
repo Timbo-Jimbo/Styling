@@ -5,7 +5,7 @@ using UnityEngine.Pool;
 
 namespace TimboJimbo.Styling
 {
-    public class StylingOverride : IDisposable
+    public class StylingOverrideScope : IDisposable
     {
         public GameObject Root => _root;
 
@@ -13,7 +13,7 @@ namespace TimboJimbo.Styling
         private List<StyleActivation> _styleActivations;
         private bool _isDisposed;
 
-        public StylingOverride(GameObject root, List<StyleActivation> styleActivations)
+        public StylingOverrideScope(GameObject root, List<StyleActivation> styleActivations)
         {
             _root = root;
             ListPool<StyleActivation>.Get(out _styleActivations);

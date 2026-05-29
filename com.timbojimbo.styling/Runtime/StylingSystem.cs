@@ -9,7 +9,7 @@ namespace TimboJimbo.Styling
     public static class StylingSystem
     {
         private static HashSet<GameObject> _dirtyRootQueue = new();
-        private static List<StylingOverride> _overrides = new();
+        private static List<StylingOverrideScope> _overrides = new();
 
         static StylingSystem()
         {
@@ -48,7 +48,7 @@ namespace TimboJimbo.Styling
                 ProcessSingle(root);
         }
 
-        public static StylingOverride StylingOverrideScope(GameObject root, IEnumerable<string> activeStyleNames)
+        public static StylingOverrideScope StylingOverrideScope(GameObject root, IEnumerable<string> activeStyleNames)
         {
             using (ListPool<StyleActivation>.Get(out var activations))
             {
@@ -64,20 +64,20 @@ namespace TimboJimbo.Styling
             }
         }
 
-        public static StylingOverride StylingOverrideScope(GameObject root, List<StyleActivation> activations)
+        public static StylingOverrideScope StylingOverrideScope(GameObject root, List<StyleActivation> activations)
         {
-            var styleOverride = new StylingOverride(root, activations);
+            var styleOverride = new StylingOverrideScope(root, activations);
             AddStylingOverride(styleOverride);
             return styleOverride;
         }
 
-        public static void AddStylingOverride(StylingOverride styleOverride)
+        public static void AddStylingOverride(StylingOverrideScope styleOverride)
         {
             _overrides.Add(styleOverride);
             MarkDirty(styleOverride.Root);
         }
 
-        public static void RemoveStylingOverride(StylingOverride styleOverride)
+        public static void RemoveStylingOverride(StylingOverrideScope styleOverride)
         {
             if(_overrides.Remove(styleOverride))
                 MarkDirty(styleOverride.Root);
@@ -227,15 +227,15 @@ namespace TimboJimbo.Styling
         /// - Overrides that are closer to the root win over more distant ones
         /// - In the case where there are multiple overrides on the same root, new ones win over older ones.
         /// </summary>
-        static bool TryGetFirstOverrideInParent(GameObject root, out StylingOverride result)
+        static bool TryGetFirstOverrideInParent(GameObject root, out StylingOverrideScope result)
         {
-            using(ListPool<StylingOverride>.Get(out var parentOverrides))
+            using(ListPool<StylingOverrideScope>.Get(out var parentOverrides))
             {
                 // important: we iterate backwards here so that newer overrides win over 
                 // older ones if they happen to be on the same root
                 for (int i = _overrides.Count - 1; i >= 0; i--)
                 {
-                    StylingOverride styleOverride = _overrides[i];
+                    StylingOverrideScope styleOverride = _overrides[i];
                     
                     if ( root.transform.IsChildOf(styleOverride.Root.transform))
                     {

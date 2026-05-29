@@ -2,20 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using TimboJimbo.PropertyBindings;
-using TimboJimbo.PropertyBindings.Editor.Utility;
+using TimboJimbo.Styling;
+using TimboJimboEditor.PropertyBindings.Utility;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
 using UnityEngine;
 using UnityEngine.Pool;
 using Object = UnityEngine.Object;
 
-namespace TimboJimbo.Styling.Editor
+namespace TimboJimboEditor.Styling
 {
 	[CustomEditor(typeof(StyleSheet))]
 	public sealed class StyleSheetEditor : UnityEditor.Editor
 	{
 		private StyleSheet _sheet;
-		private StylingOverride _previewOverride;
+		private StylingOverrideScope _previewOverride;
 
 		private PropertyTable _table;
 		private readonly List<Rect> _previewRects = new List<Rect>();

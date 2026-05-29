@@ -1,7 +1,8 @@
+using TimboJimbo.Styling;
 using UnityEditor;
 using UnityEngine;
 
-namespace TimboJimbo.Styling.Editor
+namespace TimboJimboEditor.Styling
 {
 	[CustomEditor(typeof(StyleGroup))]
 	public sealed class StyleGroupEditor : UnityEditor.Editor

@@ -1,12 +1,13 @@
 using System.Collections.Generic;
 using TimboJimbo.PropertyBindings;
-using TimboJimbo.PropertyBindings.Editor.Utility;
+using TimboJimboEditor.PropertyBindings.Utility;
 using TimboJimboEditor;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Pool;
+using TimboJimbo.Styling;
 
-namespace TimboJimbo.Styling.Editor
+namespace TimboJimboEditor.Styling
 {
 	/// <summary>
 	/// Recording session for <see cref="StyleSheet"/> that commits sparse style entries:
@@ -27,7 +28,7 @@ namespace TimboJimbo.Styling.Editor
 		private static List<BindablePropertyToValue> _preEditValues;
 		private static UserEditTracker _tracker;
 		private static string _editingOriginalName;
-		private static StylingOverride _activeOverride;
+		private static StylingOverrideScope _activeOverride;
 
 		[InitializeOnLoadMethod]
 		private static void Init()

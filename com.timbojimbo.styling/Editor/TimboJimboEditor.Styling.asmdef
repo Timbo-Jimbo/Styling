@@ -1,10 +1,10 @@
 {
-    "name": "TimboJimbo.Styling.Editor",
-    "rootNamespace": "TimboJimbo.Styling.Editor",
+    "name": "TimboJimboEditor.Styling",
+    "rootNamespace": "TimboJimboEditor.Styling",
     "references": [
         "TimboJimbo.Styling.Runtime",
         "TimboJimbo.PropertyBindings.Runtime",
-        "TimboJimbo.PropertyBindings.Editor"
+        "TimboJimboEditor.PropertyBindings"
     ],
     "includePlatforms": [
         "Editor"

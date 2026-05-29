@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
+using TimboJimbo.Styling;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace TimboJimbo.Styling.Editor
+namespace TimboJimboEditor.Styling
 {
 	/// <summary>
 	/// Forces StyleSheets to serialize their baseline values by temporarily applying
@@ -17,7 +18,7 @@ namespace TimboJimbo.Styling.Editor
 	{
 		private static readonly string[] EmptyStyles = Array.Empty<string>();
 		private static readonly List<GameObject> OverrideRoots = new List<GameObject>();
-		private static readonly List<StylingOverride> SaveOverrides = new List<StylingOverride>();
+		private static readonly List<StylingOverrideScope> SaveOverrides = new List<StylingOverrideScope>();
 
 		static StyleSheetSaveHandler()
 		{

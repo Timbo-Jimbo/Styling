@@ -8,7 +8,7 @@ using UnityEngine;
 using UnityEngine.Pool;
 using Object = UnityEngine.Object;
 
-namespace TimboJimbo.Styling.Editor
+namespace TimboJimboEditor.Styling
 {
 	/// <summary>
 	/// Scene-view overlay for the <see cref="StyleSheetRecordingSession"/>.
