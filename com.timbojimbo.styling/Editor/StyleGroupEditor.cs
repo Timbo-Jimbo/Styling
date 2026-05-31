@@ -5,8 +5,8 @@ using UnityEngine;
 namespace TimboJimboEditor.Styling
 {
 	[CustomEditor(typeof(StyleGroup))]
-	public sealed class StyleGroupEditor : UnityEditor.Editor
-	{
+	public sealed class StyleGroupEditor : Editor
+    {
 		private SerializedProperty _styleActivationsProp;
 		private SerializedProperty _isToggleGroupProp;
 

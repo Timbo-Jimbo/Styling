@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using TimboJimbo.PropertyBindings;
 using TimboJimbo.Styling;
 using TimboJimboEditor.PropertyBindings.Utility;
@@ -13,8 +12,8 @@ using Object = UnityEngine.Object;
 namespace TimboJimboEditor.Styling
 {
 	[CustomEditor(typeof(StyleSheet))]
-	public sealed class StyleSheetEditor : UnityEditor.Editor
-	{
+	public sealed class StyleSheetEditor : Editor
+    {
 		private StyleSheet _sheet;
 		private StylingOverrideScope _previewOverride;
 
@@ -55,20 +54,6 @@ namespace TimboJimboEditor.Styling
 			serializedObject.ApplyModifiedProperties();
 		}
 
-		[MenuItem("CONTEXT/StyleSheet/Sync Baseline to Active Values")]
-		private static void SyncBaselineToActiveValues(MenuCommand command)
-		{
-			if (!(command.context is StyleSheet sheet))
-				return;
-
-			Undo.RecordObject(sheet, "Sync Baseline to Active Values");
-			Undo.RegisterFullObjectHierarchyUndo(sheet.gameObject, "Sync Baseline to Active Values");
-			sheet.SyncBaselineToCurrentValues();
-			if (sheet.IsTransitioning)
-				sheet.CompleteTransitionImmediate();
-			EditorUtility.SetDirty(sheet);
-		}
-
 		private void DrawSettingsSection()
 		{
 			EditorGUILayout.LabelField("Settings", EditorStyles.boldLabel);
@@ -91,15 +76,8 @@ namespace TimboJimboEditor.Styling
 			if (stylesProp == null)
 				return;
 
-			Foldouts.Draw(
-				stylesProp,
-				new GUIContent($"Styles ({_sheet.Styles.Count})"),
-				toggleOnLabelClick: true,
-				style: EditorStyles.foldoutHeader
-            );
-
-			if (!stylesProp.isExpanded)
-				return;
+			
+			EditorGUILayout.LabelField("Styles", EditorStyles.boldLabel);
 
 			bool isAnyRecording = StyleSheetRecordingSession.IsRecording;
 			bool isThisRecording = isAnyRecording && StyleSheetRecordingSession.Target == _sheet;
@@ -137,14 +115,14 @@ namespace TimboJimboEditor.Styling
 			// Baseline row.
 			using (new GUILayout.HorizontalScope(EditorStyles.helpBox))
 			{
-				GUILayout.Label("Baseline", EditorStyles.boldLabel, GUILayout.Width(160f));
+				using (new EditorGUI.DisabledScope(true))
+					EditorGUILayout.TextField("Baseline", GUILayout.Width(160f));
+
 				GUILayout.FlexibleSpace();
 
 				using (new EditorGUI.DisabledScope(isAnyRecording))
 				{
-					DrawHoldPreviewButton(BaselinePreviewKey, "Preview");
-
-					if (GUILayout.Button("Sync from current", GUILayout.Width(130f)))
+					if (GUILayout.Button("Sync values from scene", GUILayout.Width(170f)))
 					{
 						Undo.RecordObject(_sheet, "Sync Baseline to Active Values");
 						Undo.RegisterFullObjectHierarchyUndo(_sheet.gameObject, "Sync Baseline to Active Values");
@@ -156,6 +134,9 @@ namespace TimboJimboEditor.Styling
 
 					if (GUILayout.Button("Edit", GUILayout.Width(50f)))
 						StyleSheetRecordingSession.StartEditingBaseline(_sheet);
+						
+					using (new EditorGUI.DisabledScope(true))
+						GUILayout.Button("Delete", GUILayout.Width(60f));
 				}
 			}
 
@@ -203,7 +184,6 @@ namespace TimboJimboEditor.Styling
 					}
 
 					GUILayout.FlexibleSpace();
-					DrawHoldPreviewButton(style.Name, "Preview");
 
 					if (GUILayout.Button("Edit", GUILayout.Width(50f)))
 						StyleSheetRecordingSession.StartEditing(_sheet, styleIndex);
@@ -218,55 +198,6 @@ namespace TimboJimboEditor.Styling
 
 		// Sentinel key used to identify the baseline preview button (cannot collide with style names).
 		private const string BaselinePreviewKey = "\0__baseline__";
-
-		private void DrawHoldPreviewButton(string previewKey, string label)
-		{
-			var rect = GUILayoutUtility.GetRect(new GUIContent(label), GUI.skin.button, GUILayout.Width(60f));
-
-			bool isActive = _isPreviewing && _previewStyleName == previewKey;
-			if (Event.current.type == EventType.Repaint)
-				GUI.Toggle(rect, isActive, label, GUI.skin.button);
-
-			if (!GUI.enabled)
-				return;
-
-			int controlId = GUIUtility.GetControlID($"StylePreview:{previewKey}".GetHashCode(), FocusType.Passive, rect);
-			var evt = Event.current;
-
-			switch (evt.GetTypeForControl(controlId))
-			{
-				case EventType.MouseDown:
-					if (evt.button == 0 && rect.Contains(evt.mousePosition))
-					{
-						GUIUtility.hotControl = controlId;
-						BeginPreview(previewKey);
-						evt.Use();
-					}
-					break;
-
-				case EventType.MouseDrag:
-					if (GUIUtility.hotControl == controlId)
-					{
-						if (rect.Contains(evt.mousePosition))
-							BeginPreview(previewKey);
-						else if (_previewStyleName == previewKey)
-							EndPreview();
-
-						evt.Use();
-					}
-					break;
-
-				case EventType.MouseUp:
-					if (GUIUtility.hotControl == controlId && evt.button == 0)
-					{
-						GUIUtility.hotControl = 0;
-						if (_previewStyleName == previewKey)
-							EndPreview();
-						evt.Use();
-					}
-					break;
-			}
-		}
 
 		private void DrawUnifiedTable(bool isAnyRecording)
 		{
