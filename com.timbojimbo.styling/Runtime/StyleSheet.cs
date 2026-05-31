@@ -17,7 +17,18 @@ namespace TimboJimbo.Styling
     public struct StylePropertyConfig
     {
         public BindableProperty Property;
+        public StylePropertyTransition Transition;
+    }
+
+    [Serializable] 
+    public struct StylePropertyTransition
+    {
+        public bool Animate;
+        public EaseType EaseType;
+        public float Duration;
         public InterpolationConfig Interpolation;
+        public DiscreteValueSelectionMode DiscreteValueSelection;
+        public static StylePropertyTransition Instant => new StylePropertyTransition { Animate = false, EaseType = EaseType.InOutCubic, Duration = 0.25f, Interpolation = default, DiscreteValueSelection = DiscreteValueSelectionMode.RightSide };
     }
 
     [Serializable]
@@ -34,15 +45,12 @@ namespace TimboJimbo.Styling
         [SerializeField] private List<BindablePropertyToValue> _baselineValues = new List<BindablePropertyToValue>();
         [SerializeField] private List<StylePropertyConfig> _propertyConfigs = new List<StylePropertyConfig>();
 
-        [SerializeField] private bool _enableInterpolation = true;
-        [SerializeField] private float _transitionTime = 0.25f;
-
         // Cascade subscription state.
         [NonSerialized] private List<BindablePropertyToValue> _fromValues = new List<BindablePropertyToValue>();
         [NonSerialized] private List<BindablePropertyToValue> _targetValues = new List<BindablePropertyToValue>();
         [NonSerialized] private List<BindablePropertyToValue> _currentValues = new List<BindablePropertyToValue>();
         [NonSerialized] private HashSet<string> _activeStyleNames = new HashSet<string>();
-        [NonSerialized] private float _transitionProgress01 = 1f;
+        [NonSerialized] private float _transitionTime = float.MaxValue;
         [NonSerialized] private bool _isTransitioning;
         [NonSerialized] private bool _hasAppliedAnyStyling;
         [NonSerialized] private BindingCollectionManager _bindingCollectionManager;
@@ -50,19 +58,6 @@ namespace TimboJimbo.Styling
         public IReadOnlyList<Style> Styles => _styles;
         public IReadOnlyList<BindablePropertyToValue> BaselineValues => _baselineValues;
         public IReadOnlyList<StylePropertyConfig> PropertyConfigs => _propertyConfigs;
-
-        public bool EnableInterpolation
-        {
-            get => _enableInterpolation;
-            set => _enableInterpolation = value;
-        }
-
-        public float TransitionTime
-        {
-            get => _transitionTime;
-            set => _transitionTime = value;
-        }
-
         public bool IsTransitioning => _isTransitioning;
 
         public StyleSheet() 
@@ -92,15 +87,6 @@ namespace TimboJimbo.Styling
                 UpdateStylingState(UpdateType.RefreshStyleActivationsAndTargetValues);
         }
 
-        private void OnValidate()
-        {
-            using (_bindingCollectionManager.Acquire())
-            {
-                _bindingCollectionManager.Invalidate();
-                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
-            }
-        }
-
         private void Update()
         {
             // Only want to tick elements that are live
@@ -109,20 +95,48 @@ namespace TimboJimbo.Styling
 #endif
             if (_isTransitioning)
             {
-                if (_transitionTime <= 0f)
-                    _transitionProgress01 = 1f;
-                else
-                    _transitionProgress01 += Time.deltaTime / _transitionTime;
+                _transitionTime += Time.smoothDeltaTime;
 
-                if (_transitionProgress01 >= 1f)
+                var allPropertyAnimationsComplete = true;
+                using (ListPool<BindablePropertyToValue>.Get(out var lerped))
                 {
-                    _transitionProgress01 = 1f;
-                    _isTransitioning = false;
-                    ApplyValueList(_targetValues);
+                    for (int i = 0; i < _targetValues.Count; i++)
+                    {
+                        var to = _targetValues[i];
+                        var fromIdx = Util.FindIndexByProperty(_fromValues, to.Property);
+                        var configIdx = Util.FindIndexByProperty(_propertyConfigs, to.Property);
+
+                        if(fromIdx == -1 || configIdx == -1)
+                        {
+                            lerped.Add(to);
+                            continue;
+                        }
+
+                        var from = _fromValues[fromIdx].Value;
+                        var propertyAnimation = _propertyConfigs[configIdx].Transition;
+
+                        if (!propertyAnimation.Animate || propertyAnimation.Duration <= 0)
+                        {
+                            lerped.Add(to);
+                            continue;
+                        }
+
+                        var propertyLerpT = Mathf.Clamp01(_transitionTime / propertyAnimation.Duration);
+                        allPropertyAnimationsComplete &= propertyLerpT >= 1f;
+
+                        propertyLerpT = EaseUtility.Evaluate(propertyLerpT, propertyAnimation.EaseType);
+                        var v = ValueContainer.LerpUnclamped(from, to.Value, propertyLerpT, propertyAnimation.Interpolation, propertyAnimation.DiscreteValueSelection);
+                        lerped.Add(new BindablePropertyToValue { Property = to.Property, Value = v });
+
+                    }
+
+                    ApplyValueList(lerped);
                 }
-                else
+
+                if (allPropertyAnimationsComplete)
                 {
-                    LerpAndApply(_transitionProgress01);
+                    _isTransitioning = false;
+                    _transitionTime = float.MaxValue;
                 }
             }
         }
@@ -250,7 +264,7 @@ namespace TimboJimbo.Styling
 
                     if (!Util.ContainsProperty(_propertyConfigs, property))
                     {
-                        _propertyConfigs.Add(new StylePropertyConfig { Property = property, Interpolation = default });
+                        _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = StylePropertyTransition.Instant });
                         addedProperty = true;
                     }
                 }
@@ -360,7 +374,7 @@ namespace TimboJimbo.Styling
 
                 if (!Util.ContainsProperty(_propertyConfigs, property))
                 {
-                    _propertyConfigs.Add(new StylePropertyConfig { Property = property, Interpolation = default });
+                    _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = StylePropertyTransition.Instant });
                     _bindingCollectionManager.Invalidate();
                 }
                 else if (addedBaselineEntry)
@@ -437,7 +451,7 @@ namespace TimboJimbo.Styling
 
                 if (_isTransitioning)
                 {
-                    _transitionProgress01 = 1f;
+                    _transitionTime = float.MaxValue;
                     _isTransitioning = false;
                     ApplyValueList(_targetValues);
                 }
@@ -512,19 +526,29 @@ namespace TimboJimbo.Styling
                 }
             }
 
+            var _anyPropertiesWithTransitions = false;
+            for (int i = 0; i < _propertyConfigs.Count; i++)
+            {
+                StylePropertyTransition propertyTransition = _propertyConfigs[i].Transition;
+
+                if (propertyTransition.Animate && propertyTransition.Duration > 0)
+                {
+                    _anyPropertiesWithTransitions = true;
+                    break;
+                }
+            }
+
             var applyInstantly =
                 // if we've never been styled before or...
                 !_hasAppliedAnyStyling ||
-                // if interpolation is disabled or...
-                !_enableInterpolation ||
-                // if transition time is zero or negative or...
-                _transitionTime <= 0f ||
+                // if no properties want to transition or...
+                !_anyPropertiesWithTransitions ||
                 // if we're not a live instance (e.g. we are a prefab, inside a prefab stage, edit-time scene, etc)
                 !EditorAwareUtility.IsLiveInstance(this);
 
             if (applyInstantly)
             {
-                _transitionProgress01 = 1f;
+                _transitionTime = float.MaxValue;
                 _isTransitioning = false;
 
                 Util.Copy(source: _targetValues, destination: _fromValues);
@@ -536,7 +560,7 @@ namespace TimboJimbo.Styling
 
             if(resetAnimationState)
             {
-                _transitionProgress01 = 0f;
+                _transitionTime = 0f;
                 _isTransitioning = true;
                 
                 _currentValues.Clear();
@@ -569,31 +593,6 @@ namespace TimboJimbo.Styling
                     else
                         result.Add(pv);
                 }
-            }
-        }
-
-        private void LerpAndApply(float t)
-        {
-            float eased = OutCubic(t);
-
-            using (ListPool<BindablePropertyToValue>.Get(out var lerped))
-            {
-                for (int i = 0; i < _targetValues.Count; i++)
-                {
-                    var to = _targetValues[i];
-                    var fromIdx = Util.FindIndexByProperty(_fromValues, to.Property);
-                    var configIdx = Util.FindIndexByProperty(_propertyConfigs, to.Property);
-
-                    var fromValue = fromIdx != -1 ? _fromValues[fromIdx].Value : to.Value;
-                    var lerpConfig = configIdx != -1
-                        ? new LerpConfig { Interpolation = _propertyConfigs[configIdx].Interpolation, DiscreteValueSelection = DiscreteValueSelectionMode.RightSide }
-                        : new LerpConfig { DiscreteValueSelection = DiscreteValueSelectionMode.RightSide };
-
-                    var v = ValueContainer.Lerp(fromValue, to.Value, eased, lerpConfig);
-                    lerped.Add(new BindablePropertyToValue { Property = to.Property, Value = v });
-                }
-
-                ApplyValueList(lerped);
             }
         }
 
@@ -643,7 +642,7 @@ namespace TimboJimbo.Styling
 
                 if (!Util.ContainsProperty(_propertyConfigs, property))
                 {
-                    _propertyConfigs.Add(new StylePropertyConfig { Property = property, Interpolation = default });
+                    _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = StylePropertyTransition.Instant });
                     changed = true;
                 }
             }
@@ -681,8 +680,6 @@ namespace TimboJimbo.Styling
                     _bindingCollectionManager.Invalidate();
             }
         }
-
-        private static float OutCubic(float t) => 1f - Mathf.Pow(1f - t, 3f);
 
         private static class Util
         {

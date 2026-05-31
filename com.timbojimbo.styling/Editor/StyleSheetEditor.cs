@@ -23,6 +23,7 @@ namespace TimboJimboEditor.Styling
 
 		private bool _isPreviewing;
 		private string _previewStyleName;
+		private bool _showTransitions;
 
 		private static GUIStyle PreviewChipText;
 
@@ -47,27 +48,9 @@ namespace TimboJimboEditor.Styling
 
 			serializedObject.Update();
 
-			DrawSettingsSection();
-			EditorGUILayout.Space(8f);
 			DrawStylesSection();
 
 			serializedObject.ApplyModifiedProperties();
-		}
-
-		private void DrawSettingsSection()
-		{
-			EditorGUILayout.LabelField("Settings", EditorStyles.boldLabel);
-
-			var enableInterpolationProp = serializedObject.FindProperty("_enableInterpolation");
-			var transitionTimeProp = serializedObject.FindProperty("_transitionTime");
-
-			EditorGUILayout.PropertyField(enableInterpolationProp, new GUIContent("Enable Interpolation"));
-			if (enableInterpolationProp.boolValue)
-			{
-				EditorGUI.indentLevel++;
-				EditorGUILayout.PropertyField(transitionTimeProp, new GUIContent("Transition Time"));
-				EditorGUI.indentLevel--;
-			}
 		}
 
 		private void DrawStylesSection()
@@ -107,7 +90,17 @@ namespace TimboJimboEditor.Styling
 			}
 
 			EditorGUILayout.Space(6f);
+			DrawTableModeToggle();
 			DrawUnifiedTable(isAnyRecording);
+		}
+
+		private void DrawTableModeToggle()
+		{
+			using (new GUILayout.HorizontalScope())
+			{
+				GUILayout.FlexibleSpace();
+				_showTransitions = GUILayout.Toggle(_showTransitions, "Transitions", EditorStyles.miniButton, GUILayout.Width(80f));
+			}
 		}
 
 		private void DrawStyleControlsList(bool isAnyRecording)
@@ -221,7 +214,7 @@ namespace TimboJimboEditor.Styling
 				return;
 
 			_table?.Dispose();
-			_table = PropertyTable.Create(_sheet, signature);
+			_table = PropertyTable.Create(_sheet, signature, _showTransitions);
 		}
 
 		private int ComputeTableSignature()
@@ -244,6 +237,7 @@ namespace TimboJimboEditor.Styling
 						hash = hash * 31 + styles[s].PropertyValues[p].Property.GetHashCode();
 				}
 
+				hash = hash * 31 + (_showTransitions ? 1 : 0);
 				return hash;
 			}
 		}
@@ -630,59 +624,54 @@ namespace TimboJimboEditor.Styling
 				TreeView = treeView;
 			}
 
-			public static PropertyTable Create(StyleSheet sheet, int signature)
+			public static PropertyTable Create(StyleSheet sheet, int signature, bool transitionMode)
 			{
 				var state = new TreeViewState<int>();
 
-				// Build column targets: [Property] [Baseline] [Style0] [Style1] ... [Interp]
-				var styles = sheet.Styles;
-				var targets = new ColumnTarget[1 + 1 + styles.Count + 1];
-				targets[0] = new ColumnTarget { Kind = ColumnTargetKind.Property };
-				targets[1] = new ColumnTarget { Kind = ColumnTargetKind.Baseline };
-				for (int i = 0; i < styles.Count; i++)
-					targets[2 + i] = new ColumnTarget { Kind = ColumnTargetKind.Style, StyleName = styles[i].Name };
-				targets[targets.Length - 1] = new ColumnTarget { Kind = ColumnTargetKind.Interp };
+				ColumnTarget[] targets;
+				MultiColumnHeaderState.Column[] columns;
 
-				var columns = new MultiColumnHeaderState.Column[targets.Length];
-				columns[0] = new MultiColumnHeaderState.Column
+				if (transitionMode)
 				{
-					headerContent = new GUIContent("Property"),
-					width = 220f,
-					minWidth = 120f,
-					autoResize = true,
-					canSort = false
-				};
-				columns[1] = new MultiColumnHeaderState.Column
-				{
-					headerContent = new GUIContent("Baseline"),
-					width = 140f,
-					minWidth = 80f,
-					autoResize = false,
-					canSort = false
-				};
-				for (int i = 0; i < styles.Count; i++)
-				{
-					columns[2 + i] = new MultiColumnHeaderState.Column
+					// Transition mode: [Property] [Animate] [EaseType] [Duration] [Interpolation] [DiscreteValueSelection]
+					targets = new ColumnTarget[]
 					{
-						headerContent = new GUIContent(styles[i].Name),
-						width = 140f,
-						minWidth = 80f,
-						autoResize = false,
-						canSort = false
+						new ColumnTarget { Kind = ColumnTargetKind.Property },
+						new ColumnTarget { Kind = ColumnTargetKind.TransitionAnimate },
+						new ColumnTarget { Kind = ColumnTargetKind.TransitionEaseType },
+						new ColumnTarget { Kind = ColumnTargetKind.TransitionDuration },
+						new ColumnTarget { Kind = ColumnTargetKind.TransitionInterpolation },
+						new ColumnTarget { Kind = ColumnTargetKind.TransitionDiscreteValueSelection },
+					};
+					columns = new MultiColumnHeaderState.Column[]
+					{
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Property"), width = 220f, minWidth = 120f, autoResize = false, canSort = false },
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Animate"), width = 60f, minWidth = 50f, maxWidth = 70f, autoResize = false, canSort = false },
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Ease"), width = 110f, minWidth = 80f, autoResize = false, canSort = false },
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Duration"), width = 70f, minWidth = 50f, maxWidth = 90f, autoResize = false, canSort = false },
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Interpolation"), width = 110f, minWidth = 80f, autoResize = false, canSort = false },
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Discrete Mode"), width = 90f, minWidth = 70f, autoResize = false, canSort = false },
 					};
 				}
-				columns[columns.Length - 1] = new MultiColumnHeaderState.Column
+				else
 				{
-					headerContent = new GUIContent("Interp"),
-					width = 110f,
-					minWidth = 60f,
-					maxWidth = 180f,
-					autoResize = false,
-					canSort = false
-				};
+					// Styles mode: [Property] [Baseline] [Style0] [Style1] ...
+					var styles = sheet.Styles;
+					targets = new ColumnTarget[1 + 1 + styles.Count];
+					targets[0] = new ColumnTarget { Kind = ColumnTargetKind.Property };
+					targets[1] = new ColumnTarget { Kind = ColumnTargetKind.Baseline };
+					for (int i = 0; i < styles.Count; i++)
+						targets[2 + i] = new ColumnTarget { Kind = ColumnTargetKind.Style, StyleName = styles[i].Name };
+
+					columns = new MultiColumnHeaderState.Column[targets.Length];
+					columns[0] = new MultiColumnHeaderState.Column { headerContent = new GUIContent("Property"), width = 220f, minWidth = 120f, autoResize = false, canSort = false };
+					columns[1] = new MultiColumnHeaderState.Column { headerContent = new GUIContent("Baseline"), width = 140f, minWidth = 80f, autoResize = false, canSort = false };
+					for (int i = 0; i < styles.Count; i++)
+						columns[2 + i] = new MultiColumnHeaderState.Column { headerContent = new GUIContent(styles[i].Name), width = 140f, minWidth = 80f, autoResize = false, canSort = false };
+				}
 
 				var headerState = new MultiColumnHeaderState(columns);
-				var header = new StyleTableMultiColumnHeader(headerState, baselineColumnIndex: 1)
+				var header = new StyleTableMultiColumnHeader(headerState, baselineColumnIndex: transitionMode ? -1 : 1)
 				{
 					canSort = false,
 					height = 22f
@@ -729,7 +718,7 @@ namespace TimboJimboEditor.Styling
 						s_italicHeader.Draw(headerRect, column.headerContent, false, false, false, false);
 						return;
 					}
-					else if(columnIndex > _baselineColumnIndex)
+					else if(columnIndex != 0)
 					{
 						if (s_standardHeader == null)
 						{
@@ -758,7 +747,7 @@ namespace TimboJimboEditor.Styling
 			public Object Target;
 		}
 
-		internal enum ColumnTargetKind { Property, Baseline, Style, Interp }
+		internal enum ColumnTargetKind { Property, Baseline, Style, TransitionAnimate, TransitionEaseType, TransitionDuration, TransitionInterpolation, TransitionDiscreteValueSelection }
 
 		internal struct ColumnTarget
 		{
@@ -928,9 +917,25 @@ namespace TimboJimboEditor.Styling
 						if (data.Type == NodeType.Property)
 							DrawStyleValueCell(rect, target.StyleName, data.Property);
 						break;
-					case ColumnTargetKind.Interp:
+					case ColumnTargetKind.TransitionAnimate:
 						if (data.Type == NodeType.Property)
-							DrawInterpCell(rect, data.Property);
+							DrawTransitionAnimateCell(rect, data.Property);
+						break;
+					case ColumnTargetKind.TransitionEaseType:
+						if (data.Type == NodeType.Property)
+							DrawTransitionEaseTypeCell(rect, data.Property);
+						break;
+					case ColumnTargetKind.TransitionDuration:
+						if (data.Type == NodeType.Property)
+							DrawTransitionDurationCell(rect, data.Property);
+						break;
+					case ColumnTargetKind.TransitionInterpolation:
+						if (data.Type == NodeType.Property)
+							DrawTransitionInterpolationCell(rect, data.Property);
+						break;
+					case ColumnTargetKind.TransitionDiscreteValueSelection:
+						if (data.Type == NodeType.Property)
+							DrawTransitionDiscreteValueSelectionCell(rect, data.Property);
 						break;
 				}
 			}
@@ -1298,69 +1303,198 @@ namespace TimboJimboEditor.Styling
 				return false;
 			}
 
-			private void DrawInterpCell(Rect rect, BindableProperty property)
+			private bool TryGetTransition(BindableProperty property, out int index, out StylePropertyTransition transition)
 			{
 				var configs = _sheet.PropertyConfigs;
-				int index = -1;
 				for (int i = 0; i < configs.Count; i++)
 				{
 					if (configs[i].Property.Equals(property))
 					{
 						index = i;
-						break;
+						transition = configs[i].Transition;
+						return true;
 					}
 				}
 
-				if (index < 0)
-				{
-					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
-					return;
-				}
-
-				var config = configs[index].Interpolation;
-
-				EditorGUI.BeginChangeCheck();
-				switch (property.Kind)
-				{
-					case ValueKind.Quaternion:
-						config.Rotation = (RotationInterpolationMode)EditorGUI.EnumPopup(rect, config.Rotation);
-						break;
-					case ValueKind.Color:
-						config.Color = (ColorInterpolationMode)EditorGUI.EnumPopup(rect, config.Color);
-						break;
-					case ValueKind.Vector2:
-						config.Vector2 = (VectorInterpolationMode)EditorGUI.EnumPopup(rect, config.Vector2);
-						break;
-					case ValueKind.Vector3:
-						config.Vector3 = (VectorInterpolationMode)EditorGUI.EnumPopup(rect, config.Vector3);
-						break;
-					default:
-						EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
-						return;
-				}
-
-				if (EditorGUI.EndChangeCheck())
-				{
-					Undo.RecordObject(_sheet, "Change Interpolation");
-					SetInterpolationViaSerializedProperty(_sheet, index, config);
-					EditorUtility.SetDirty(_sheet);
-				}
+				index = -1;
+				transition = default;
+				return false;
 			}
 
-			private static void SetInterpolationViaSerializedProperty(StyleSheet sheet, int configIndex, InterpolationConfig config)
+			private void SetTransitionViaSerializedProperty(int configIndex, StylePropertyTransition transition)
 			{
-				using var serializedSheet = new SerializedObject(sheet);
+				using var serializedSheet = new SerializedObject(_sheet);
 				var configsProp = serializedSheet.FindProperty("_propertyConfigs");
 				if (configsProp == null || configIndex < 0 || configIndex >= configsProp.arraySize)
 					return;
 
 				var entryProp = configsProp.GetArrayElementAtIndex(configIndex);
-				var interpolationProp = entryProp.FindPropertyRelative(nameof(StylePropertyConfig.Interpolation));
-				interpolationProp.FindPropertyRelative(nameof(InterpolationConfig.Rotation)).enumValueIndex = (int)config.Rotation;
-				interpolationProp.FindPropertyRelative(nameof(InterpolationConfig.Color)).enumValueIndex = (int)config.Color;
-				interpolationProp.FindPropertyRelative(nameof(InterpolationConfig.Vector2)).enumValueIndex = (int)config.Vector2;
-				interpolationProp.FindPropertyRelative(nameof(InterpolationConfig.Vector3)).enumValueIndex = (int)config.Vector3;
+				var transitionProp = entryProp.FindPropertyRelative(nameof(StylePropertyConfig.Transition));
+				transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.Animate)).boolValue = transition.Animate;
+				transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.EaseType)).enumValueIndex = (int)transition.EaseType;
+				transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.Duration)).floatValue = transition.Duration;
+				var interpProp = transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.Interpolation));
+				interpProp.FindPropertyRelative(nameof(InterpolationConfig.Rotation)).enumValueIndex = (int)transition.Interpolation.Rotation;
+				interpProp.FindPropertyRelative(nameof(InterpolationConfig.Color)).enumValueIndex = (int)transition.Interpolation.Color;
+				interpProp.FindPropertyRelative(nameof(InterpolationConfig.Vector2)).enumValueIndex = (int)transition.Interpolation.Vector2;
+				interpProp.FindPropertyRelative(nameof(InterpolationConfig.Vector3)).enumValueIndex = (int)transition.Interpolation.Vector3;
+				transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.DiscreteValueSelection)).enumValueIndex = (int)transition.DiscreteValueSelection;
 				serializedSheet.ApplyModifiedProperties();
+			}
+
+			private static bool IsContinuousKind(ValueKind kind)
+			{
+				switch (kind)
+				{
+					case ValueKind.Float:
+					case ValueKind.Vector2:
+					case ValueKind.Vector3:
+					case ValueKind.Vector4:
+					case ValueKind.Color:
+					case ValueKind.Quaternion:
+						return true;
+					default:
+						return false;
+				}
+			}
+
+			private void DrawTransitionAnimateCell(Rect rect, BindableProperty property)
+			{
+				if (!TryGetTransition(property, out var index, out var transition))
+				{
+					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+					return;
+				}
+
+				var toggleRect = new Rect(rect.x + (rect.width - 16f) * 0.5f, rect.y, 16f, rect.height);
+				EditorGUI.BeginChangeCheck();
+				bool newAnimate = EditorGUI.Toggle(toggleRect, transition.Animate);
+				if (EditorGUI.EndChangeCheck())
+				{
+					Undo.RecordObject(_sheet, "Change Transition Animate");
+					transition.Animate = newAnimate;
+					SetTransitionViaSerializedProperty(index, transition);
+					EditorUtility.SetDirty(_sheet);
+				}
+			}
+
+			private void DrawTransitionEaseTypeCell(Rect rect, BindableProperty property)
+			{
+				if (!TryGetTransition(property, out var index, out var transition))
+				{
+					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+					return;
+				}
+
+				if (!IsContinuousKind(property.Kind))
+				{
+					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+					return;
+				}
+
+				using (new EditorGUI.DisabledScope(!transition.Animate))
+				{
+					EditorGUI.BeginChangeCheck();
+					var newEase = (EaseType)EditorGUI.EnumPopup(rect, transition.EaseType);
+					if (EditorGUI.EndChangeCheck())
+					{
+						Undo.RecordObject(_sheet, "Change Transition Ease");
+						transition.EaseType = newEase;
+						SetTransitionViaSerializedProperty(index, transition);
+						EditorUtility.SetDirty(_sheet);
+					}
+				}
+			}
+
+			private void DrawTransitionDurationCell(Rect rect, BindableProperty property)
+			{
+				if (!TryGetTransition(property, out var index, out var transition))
+				{
+					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+					return;
+				}
+
+				using (new EditorGUI.DisabledScope(!transition.Animate))
+				{
+					EditorGUI.BeginChangeCheck();
+					float newDuration = EditorGUI.FloatField(rect, transition.Duration);
+					if (EditorGUI.EndChangeCheck())
+					{
+						Undo.RecordObject(_sheet, "Change Transition Duration");
+						transition.Duration = Mathf.Max(0f, newDuration);
+						SetTransitionViaSerializedProperty(index, transition);
+						EditorUtility.SetDirty(_sheet);
+					}
+				}
+			}
+
+			private void DrawTransitionInterpolationCell(Rect rect, BindableProperty property)
+			{
+				if (!TryGetTransition(property, out var index, out var transition))
+				{
+					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+					return;
+				}
+
+				using (new EditorGUI.DisabledScope(!transition.Animate))
+				{
+					var config = transition.Interpolation;
+					EditorGUI.BeginChangeCheck();
+					switch (property.Kind)
+					{
+						case ValueKind.Quaternion:
+							config.Rotation = (RotationInterpolationMode)EditorGUI.EnumPopup(rect, config.Rotation);
+							break;
+						case ValueKind.Color:
+							config.Color = (ColorInterpolationMode)EditorGUI.EnumPopup(rect, config.Color);
+							break;
+						case ValueKind.Vector2:
+							config.Vector2 = (VectorInterpolationMode)EditorGUI.EnumPopup(rect, config.Vector2);
+							break;
+						case ValueKind.Vector3:
+							config.Vector3 = (VectorInterpolationMode)EditorGUI.EnumPopup(rect, config.Vector3);
+							break;
+						default:
+							EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+							return;
+					}
+
+					if (EditorGUI.EndChangeCheck())
+					{
+						Undo.RecordObject(_sheet, "Change Transition Interpolation");
+						transition.Interpolation = config;
+						SetTransitionViaSerializedProperty(index, transition);
+						EditorUtility.SetDirty(_sheet);
+					}
+				}
+			}
+
+			private void DrawTransitionDiscreteValueSelectionCell(Rect rect, BindableProperty property)
+			{
+				if (!TryGetTransition(property, out var index, out var transition))
+				{
+					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+					return;
+				}
+
+				if (IsContinuousKind(property.Kind))
+				{
+					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+					return;
+				}
+
+				using (new EditorGUI.DisabledScope(!transition.Animate))
+				{
+					EditorGUI.BeginChangeCheck();
+					var newMode = (DiscreteValueSelectionMode)EditorGUI.EnumPopup(rect, transition.DiscreteValueSelection);
+					if (EditorGUI.EndChangeCheck())
+					{
+						Undo.RecordObject(_sheet, "Change Discrete Value Selection");
+						transition.DiscreteValueSelection = newMode;
+						SetTransitionViaSerializedProperty(index, transition);
+						EditorUtility.SetDirty(_sheet);
+					}
+				}
 			}
 		}
 
