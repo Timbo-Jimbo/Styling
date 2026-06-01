@@ -23,12 +23,12 @@ namespace TimboJimbo.Styling
     [Serializable] 
     public struct StylePropertyTransition
     {
-        public bool Animate;
+        public bool Animate => Duration > 0;
         public EaseType EaseType;
         public float Duration;
         public InterpolationConfig Interpolation;
         public DiscreteValueSelectionMode DiscreteValueSelection;
-        public static StylePropertyTransition Instant => new StylePropertyTransition { Animate = false, EaseType = EaseType.InOutCubic, Duration = 0.25f, Interpolation = default, DiscreteValueSelection = DiscreteValueSelectionMode.RightSide };
+        public static StylePropertyTransition Instant => new StylePropertyTransition { EaseType = EaseType.InOutCubic, Duration = 0, Interpolation = default, DiscreteValueSelection = DiscreteValueSelectionMode.RightSide };
     }
 
     [Serializable]
@@ -610,6 +610,11 @@ namespace TimboJimbo.Styling
 
             Util.Copy(source: values, destination: _currentValues);
             _hasAppliedAnyStyling = true;
+
+            #if UNITY_EDITOR
+            if (!EditorAwareUtility.IsLiveInstance(this))
+                UnityEditor.SceneView.RepaintAll();
+            #endif
         }
 
         private void EnsurePropertiesExistInBaselineAndConfig(

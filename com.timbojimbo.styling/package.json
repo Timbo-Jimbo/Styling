@@ -1,13 +1,13 @@
 {
 	"name": "com.timbojimbo.styling",
 	"displayName":"Styling",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"unity": "6000.0",
 	"unityRelease": "0f1",
-	"description": "todo",
+	"description": "A styling system for Unity inspired by CSS.",
 	"dependencies": {
 		"com.unity.test-framework": "1.6.0",
-		"com.timbojimbo.propertybindings": "0.2.0"
+		"com.timbojimbo.propertybindings": "0.3.0"
 	},
 	"author": {
 		"name": "Timbo Jimbo",

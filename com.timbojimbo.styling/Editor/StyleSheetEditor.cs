@@ -23,9 +23,13 @@ namespace TimboJimboEditor.Styling
 
 		private bool _isPreviewing;
 		private string _previewStyleName;
-		private bool _showTransitions;
-
 		private static GUIStyle PreviewChipText;
+		private static bool ShowTransitions 
+		{
+			get => SessionState.GetBool("StyleSheetEditor.ShowTransitions", false);
+			set => SessionState.SetBool("StyleSheetEditor.ShowTransitions", value);
+		}
+
 
 		private void OnEnable()
 		{
@@ -90,17 +94,7 @@ namespace TimboJimboEditor.Styling
 			}
 
 			EditorGUILayout.Space(6f);
-			DrawTableModeToggle();
 			DrawUnifiedTable(isAnyRecording);
-		}
-
-		private void DrawTableModeToggle()
-		{
-			using (new GUILayout.HorizontalScope())
-			{
-				GUILayout.FlexibleSpace();
-				_showTransitions = GUILayout.Toggle(_showTransitions, "Transitions", EditorStyles.miniButton, GUILayout.Width(80f));
-			}
 		}
 
 		private void DrawStyleControlsList(bool isAnyRecording)
@@ -198,6 +192,19 @@ namespace TimboJimboEditor.Styling
 			if (_table == null)
 				return;
 
+			var headerRow = GUILayoutUtility.GetRect(0f, 10000f, 20f, 20f);
+			EditorGUI.LabelField(headerRow, "Property Table", EditorStyles.boldLabel);
+
+			const float segmentWidth = 150f;
+			var segmentRect = new Rect(
+				headerRow.xMax - segmentWidth,
+				headerRow.y + (headerRow.height - 18f) * 0.5f,
+				segmentWidth,
+				18f);
+			int next = StylingEditorGUI.SegmentedControl(segmentRect, ShowTransitions ? 1 : 0, "Values", "Transitions");
+			if ((next == 1) != ShowTransitions)
+				ShowTransitions = next == 1;
+
 			using (new EditorGUI.DisabledScope(isAnyRecording))
 			{
 				GUILayout.Space(4f);
@@ -214,7 +221,7 @@ namespace TimboJimboEditor.Styling
 				return;
 
 			_table?.Dispose();
-			_table = PropertyTable.Create(_sheet, signature, _showTransitions);
+			_table = PropertyTable.Create(_sheet, signature, ShowTransitions);
 		}
 
 		private int ComputeTableSignature()
@@ -237,7 +244,7 @@ namespace TimboJimboEditor.Styling
 						hash = hash * 31 + styles[s].PropertyValues[p].Property.GetHashCode();
 				}
 
-				hash = hash * 31 + (_showTransitions ? 1 : 0);
+				hash = hash * 31 + (ShowTransitions ? 1 : 0);
 				return hash;
 			}
 		}
@@ -633,24 +640,22 @@ namespace TimboJimboEditor.Styling
 
 				if (transitionMode)
 				{
-					// Transition mode: [Property] [Animate] [EaseType] [Duration] [Interpolation] [DiscreteValueSelection]
+					// Transition mode: [Property] [Duration] [EaseType] [Interpolation] [DiscreteValueSelection]
 					targets = new ColumnTarget[]
 					{
 						new ColumnTarget { Kind = ColumnTargetKind.Property },
-						new ColumnTarget { Kind = ColumnTargetKind.TransitionAnimate },
-						new ColumnTarget { Kind = ColumnTargetKind.TransitionEaseType },
 						new ColumnTarget { Kind = ColumnTargetKind.TransitionDuration },
+						new ColumnTarget { Kind = ColumnTargetKind.TransitionEaseType },
 						new ColumnTarget { Kind = ColumnTargetKind.TransitionInterpolation },
 						new ColumnTarget { Kind = ColumnTargetKind.TransitionDiscreteValueSelection },
 					};
 					columns = new MultiColumnHeaderState.Column[]
 					{
 						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Property"), width = 220f, minWidth = 120f, autoResize = false, canSort = false },
-						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Animate"), width = 60f, minWidth = 50f, maxWidth = 70f, autoResize = false, canSort = false },
-						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Ease"), width = 110f, minWidth = 80f, autoResize = false, canSort = false },
-						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Duration"), width = 70f, minWidth = 50f, maxWidth = 90f, autoResize = false, canSort = false },
-						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Interpolation"), width = 110f, minWidth = 80f, autoResize = false, canSort = false },
-						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Discrete Mode"), width = 90f, minWidth = 70f, autoResize = false, canSort = false },
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Duration"), width = 100f, minWidth = 70f, autoResize = false, canSort = false },
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Ease"), width = 100f, minWidth = 70f, autoResize = false, canSort = false },
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Interpolation"), width = 100f, minWidth = 70f, autoResize = false, canSort = false },
+						new MultiColumnHeaderState.Column { headerContent = new GUIContent("Discrete Mode"), width = 100f, minWidth = 70f, autoResize = false, canSort = false },
 					};
 				}
 				else
@@ -665,9 +670,9 @@ namespace TimboJimboEditor.Styling
 
 					columns = new MultiColumnHeaderState.Column[targets.Length];
 					columns[0] = new MultiColumnHeaderState.Column { headerContent = new GUIContent("Property"), width = 220f, minWidth = 120f, autoResize = false, canSort = false };
-					columns[1] = new MultiColumnHeaderState.Column { headerContent = new GUIContent("Baseline"), width = 140f, minWidth = 80f, autoResize = false, canSort = false };
+					columns[1] = new MultiColumnHeaderState.Column { headerContent = new GUIContent("Baseline"), width = 180f, minWidth = 80f, autoResize = false, canSort = false };
 					for (int i = 0; i < styles.Count; i++)
-						columns[2 + i] = new MultiColumnHeaderState.Column { headerContent = new GUIContent(styles[i].Name), width = 140f, minWidth = 80f, autoResize = false, canSort = false };
+						columns[2 + i] = new MultiColumnHeaderState.Column { headerContent = new GUIContent(styles[i].Name), width = 180f, minWidth = 80f, autoResize = false, canSort = false };
 				}
 
 				var headerState = new MultiColumnHeaderState(columns);
@@ -747,7 +752,7 @@ namespace TimboJimboEditor.Styling
 			public Object Target;
 		}
 
-		internal enum ColumnTargetKind { Property, Baseline, Style, TransitionAnimate, TransitionEaseType, TransitionDuration, TransitionInterpolation, TransitionDiscreteValueSelection }
+		internal enum ColumnTargetKind { Property, Baseline, Style, TransitionEaseType, TransitionDuration, TransitionInterpolation, TransitionDiscreteValueSelection }
 
 		internal struct ColumnTarget
 		{
@@ -916,10 +921,6 @@ namespace TimboJimboEditor.Styling
 					case ColumnTargetKind.Style:
 						if (data.Type == NodeType.Property)
 							DrawStyleValueCell(rect, target.StyleName, data.Property);
-						break;
-					case ColumnTargetKind.TransitionAnimate:
-						if (data.Type == NodeType.Property)
-							DrawTransitionAnimateCell(rect, data.Property);
 						break;
 					case ColumnTargetKind.TransitionEaseType:
 						if (data.Type == NodeType.Property)
@@ -1330,9 +1331,8 @@ namespace TimboJimboEditor.Styling
 
 				var entryProp = configsProp.GetArrayElementAtIndex(configIndex);
 				var transitionProp = entryProp.FindPropertyRelative(nameof(StylePropertyConfig.Transition));
-				transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.Animate)).boolValue = transition.Animate;
-				transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.EaseType)).enumValueIndex = (int)transition.EaseType;
 				transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.Duration)).floatValue = transition.Duration;
+				transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.EaseType)).enumValueIndex = (int)transition.EaseType;
 				var interpProp = transitionProp.FindPropertyRelative(nameof(StylePropertyTransition.Interpolation));
 				interpProp.FindPropertyRelative(nameof(InterpolationConfig.Rotation)).enumValueIndex = (int)transition.Interpolation.Rotation;
 				interpProp.FindPropertyRelative(nameof(InterpolationConfig.Color)).enumValueIndex = (int)transition.Interpolation.Color;
@@ -1358,26 +1358,6 @@ namespace TimboJimboEditor.Styling
 				}
 			}
 
-			private void DrawTransitionAnimateCell(Rect rect, BindableProperty property)
-			{
-				if (!TryGetTransition(property, out var index, out var transition))
-				{
-					EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
-					return;
-				}
-
-				var toggleRect = new Rect(rect.x + (rect.width - 16f) * 0.5f, rect.y, 16f, rect.height);
-				EditorGUI.BeginChangeCheck();
-				bool newAnimate = EditorGUI.Toggle(toggleRect, transition.Animate);
-				if (EditorGUI.EndChangeCheck())
-				{
-					Undo.RecordObject(_sheet, "Change Transition Animate");
-					transition.Animate = newAnimate;
-					SetTransitionViaSerializedProperty(index, transition);
-					EditorUtility.SetDirty(_sheet);
-				}
-			}
-
 			private void DrawTransitionEaseTypeCell(Rect rect, BindableProperty property)
 			{
 				if (!TryGetTransition(property, out var index, out var transition))
@@ -1394,15 +1374,13 @@ namespace TimboJimboEditor.Styling
 
 				using (new EditorGUI.DisabledScope(!transition.Animate))
 				{
-					EditorGUI.BeginChangeCheck();
-					var newEase = (EaseType)EditorGUI.EnumPopup(rect, transition.EaseType);
-					if (EditorGUI.EndChangeCheck())
+					StylingEditorGUI.EaseTypePopup(rect, transition.EaseType, newEase => 
 					{
 						Undo.RecordObject(_sheet, "Change Transition Ease");
 						transition.EaseType = newEase;
 						SetTransitionViaSerializedProperty(index, transition);
 						EditorUtility.SetDirty(_sheet);
-					}
+					});
 				}
 			}
 
@@ -1414,17 +1392,14 @@ namespace TimboJimboEditor.Styling
 					return;
 				}
 
-				using (new EditorGUI.DisabledScope(!transition.Animate))
+				EditorGUI.BeginChangeCheck();
+				float newDuration = EditorGUI.FloatField(rect, transition.Duration);
+				if (EditorGUI.EndChangeCheck())
 				{
-					EditorGUI.BeginChangeCheck();
-					float newDuration = EditorGUI.FloatField(rect, transition.Duration);
-					if (EditorGUI.EndChangeCheck())
-					{
-						Undo.RecordObject(_sheet, "Change Transition Duration");
-						transition.Duration = Mathf.Max(0f, newDuration);
-						SetTransitionViaSerializedProperty(index, transition);
-						EditorUtility.SetDirty(_sheet);
-					}
+					Undo.RecordObject(_sheet, "Change Transition Duration");
+					transition.Duration = Mathf.Max(0f, newDuration);
+					SetTransitionViaSerializedProperty(index, transition);
+					EditorUtility.SetDirty(_sheet);
 				}
 			}
 
@@ -1485,15 +1460,13 @@ namespace TimboJimboEditor.Styling
 
 				using (new EditorGUI.DisabledScope(!transition.Animate))
 				{
-					EditorGUI.BeginChangeCheck();
-					var newMode = (DiscreteValueSelectionMode)EditorGUI.EnumPopup(rect, transition.DiscreteValueSelection);
-					if (EditorGUI.EndChangeCheck())
+					StylingEditorGUI.DiscreteValueSelectionModePopup(rect, transition.DiscreteValueSelection, newMode =>
 					{
 						Undo.RecordObject(_sheet, "Change Discrete Value Selection");
 						transition.DiscreteValueSelection = newMode;
 						SetTransitionViaSerializedProperty(index, transition);
 						EditorUtility.SetDirty(_sheet);
-					}
+					});
 				}
 			}
 		}
