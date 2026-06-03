@@ -47,7 +47,8 @@ Done!
 You can also add it directly from GitHub on Unity 2019.4+. Note that you won't be able to receive updates through Package Manager this way, you'll have to update manually.
 
 - First follow the installation instructions for the [Property Bindings package](https://github.com/Timbo-Jimbo/PropertyBindings)
-- Once installed, click add and select **Add package from git URL...**
+- Once installed, open **Window > Package Manager** 
+- Click add and select **Add package from git URL...**
 - Paste `https://github.com/Timbo-Jimbo/Styling.git?path=Packages/com.timbojimbo.styling`
 </details>
 
