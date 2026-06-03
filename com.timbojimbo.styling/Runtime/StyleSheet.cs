@@ -418,7 +418,7 @@ namespace TimboJimbo.Styling
         /// Replaces each managed baseline entry with the property's current live value.
         /// Entries that can no longer be read are left unchanged.
         /// </summary>
-        public void SyncBaselineToCurrentValues()
+        public void PullBaselineValuesFromScene()
         {
             using (var handle = _bindingCollectionManager.Acquire())
             {

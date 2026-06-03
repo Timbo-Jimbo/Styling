@@ -6,6 +6,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Pool;
 using TimboJimbo.Styling;
+using UnityEngine.Rendering.VirtualTexturing;
 
 namespace TimboJimboEditor.Styling
 {
@@ -189,7 +190,7 @@ namespace TimboJimboEditor.Styling
 			SnapshotAllValues(_preEditValues);
 
 			IsRecording = true;
-			SceneView.RepaintAll();
+			RepaintAll();
 		}
 
 		private static void EndSession(bool revertToSnapshot)
@@ -225,7 +226,7 @@ namespace TimboJimboEditor.Styling
 			if (target != null)
 				Selection.activeGameObject = target.gameObject;
 
-			SceneView.RepaintAll();
+			RepaintAll();
 		}
 
 		private static void ApplyOverride(GameObject root, IReadOnlyList<string> activeStyleNames)
@@ -247,7 +248,7 @@ namespace TimboJimboEditor.Styling
 
 		private static void OnTrackerEdit(EditType editType, BindablePropertyValueEdit edit)
 		{
-			SceneView.RepaintAll();
+			RepaintAll();
 		}
 
 		private static bool StyleNameExists(StyleSheet sheet, string name)
@@ -272,6 +273,14 @@ namespace TimboJimboEditor.Styling
 			} while (StyleNameExists(sheet, candidate));
 
 			return candidate;
+		}
+
+		private static void RepaintAll()
+		{
+			SceneView.RepaintAll();
+			
+            foreach (var item in ActiveEditorTracker.sharedTracker.activeEditors)
+                item.Repaint();
 		}
 	}
 }
