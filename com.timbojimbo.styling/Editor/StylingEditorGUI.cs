@@ -193,7 +193,7 @@ namespace TimboJimboEditor.Styling
             return GUILayout.Button(content, Styles.GhostIconStyle, GUILayout.ExpandWidth(false));
         }
 
-        public static bool ButtonGroupButton(GUIContent content, int buttonIndex, int buttonCount, Action<int> onClick = null, params GUILayoutOption[] options)
+        public static bool ButtonGroupButton(GUIContent content, int buttonIndex, int buttonCount, Action onClick = null, params GUILayoutOption[] options)
         {
             var leftStyle = EditorStyles.miniButtonLeft;
             var midStyle = EditorStyles.miniButtonMid;
@@ -210,11 +210,33 @@ namespace TimboJimboEditor.Styling
 
             if (GUILayout.Button(content, style, options))
             {
-                onClick?.Invoke(buttonIndex);
+                onClick?.Invoke();
                 return true;
             }
 
             return false;
+        }
+
+        public static bool ButtonGroupToggleButton(GUIContent content, bool value, int buttonIndex, int buttonCount, Action<bool> onToggle = null, params GUILayoutOption[] options)
+        {
+            var leftStyle = EditorStyles.miniButtonLeft;
+            var midStyle = EditorStyles.miniButtonMid;
+            var rightStyle = EditorStyles.miniButtonRight;
+            var standaloneStyle = EditorStyles.miniButton;
+
+            GUIStyle style = buttonIndex switch
+            {
+                0 when buttonCount == 1 => standaloneStyle,
+                0 => leftStyle,
+                _ when buttonIndex == buttonCount - 1 => rightStyle,
+                _ => midStyle,
+            };
+
+            bool newValue = GUILayout.Toggle(value, content, style, options);
+            if (newValue != value)
+                onToggle?.Invoke(newValue);
+
+            return newValue;
         }
 
         // ── Hold button group ────────────────────────────────────────────────────
@@ -479,7 +501,7 @@ namespace TimboJimboEditor.Styling
 
             private const float FoldoutContentLeftPadding = 0f;
             private const float FoldoutContentRightPadding = 0f;
-            private const float FoldoutVerticalPadding = 4f;
+            private const float FoldoutVerticalPadding = 0f;
             public const float FoldoutTopBorderThickness = 1f;
 
             public static GUIStyle GhostIconStyle => _ghostIconStyle ??= new GUIStyle(EditorStyles.iconButton)

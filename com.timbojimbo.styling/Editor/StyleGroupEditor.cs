@@ -8,28 +8,51 @@ namespace TimboJimboEditor.Styling
 	public sealed class StyleGroupEditor : Editor
     {
 		private SerializedProperty _styleActivationsProp;
-		private SerializedProperty _isToggleGroupProp;
+
+		private static bool ShowStyleActivations
+		{
+			get => SessionState.GetBool("StyleGroupEditor.ShowStyleActivations", true);
+			set => SessionState.SetBool("StyleGroupEditor.ShowStyleActivations", value);
+		} 
 
 		private void OnEnable()
 		{
 			_styleActivationsProp = serializedObject.FindProperty("_styleActivations");
-			_isToggleGroupProp = serializedObject.FindProperty("_isToggleGroup");
 		}
 
 		public override void OnInspectorGUI()
 		{
 			serializedObject.Update();
+		
+			DrawStyleActivations();
 
-			EditorGUILayout.HelpBox(
-				"Activations cascade to descendant StyleSheets. Innermost group wins per name.\n" +
-				"Active=true enables, Active=false explicitly disables (shadows ancestors).",
-				MessageType.None);
+			serializedObject.ApplyModifiedProperties();
+		}
 
-			EditorGUILayout.PropertyField(_isToggleGroupProp, new GUIContent(
-				"As Toggle Group",
-				"When enabled, only one entry can be Active at a time. Activating one deactivates the others."));
+		private void DrawStyleActivations()
+		{
+			StylingEditorGUI.DrawFoldout(
+				expanded: ShowStyleActivations,
+				drawContent: () =>
+				{
+					EditorGUILayout.LabelField("Style Activations", EditorStyles.boldLabel);
+					GUILayout.FlexibleSpace();
+					if(StylingEditorGUI.AddButton())
+					{
+						_styleActivationsProp.arraySize++;
+						var entry = _styleActivationsProp.GetArrayElementAtIndex(_styleActivationsProp.arraySize - 1);
+						entry.FindPropertyRelative(nameof(StyleActivation.Name)).stringValue = $"Style {_styleActivationsProp.arraySize}";
+						entry.FindPropertyRelative(nameof(StyleActivation.Active)).boolValue = false;
+						entry.serializedObject.ApplyModifiedProperties();
+					}
+				},
+				onToggle: value => ShowStyleActivations = value
+			);
 
-			bool isToggleGroup = _isToggleGroupProp.boolValue;
+			if (!ShowStyleActivations)
+				return;
+
+
 			int removeAt = -1;
 
 			for (int i = 0; i < _styleActivationsProp.arraySize; i++)
@@ -41,42 +64,31 @@ namespace TimboJimboEditor.Styling
 				using (new GUILayout.HorizontalScope())
 				{
 					EditorGUILayout.PropertyField(nameProp, GUIContent.none);
+					var active = StylingEditorGUI.ButtonGroupToggleButton(
+						content: new GUIContent("Active", tooltip: "When enabled, this style is active. When disabled, this style is explicitly inactive and will override any active state from parent groups."),
+						value: activeProp.boolValue,
+						buttonIndex: 0,
+						buttonCount: 2,
+						options: GUILayout.Width(64f)
+					);
 
-					bool wasActive = activeProp.boolValue;
-					bool nowActive = GUILayout.Toggle(wasActive, "Active", "Button", GUILayout.Width(70f));
-					if (nowActive != wasActive)
-					{
-						activeProp.boolValue = nowActive;
-						if (isToggleGroup && nowActive)
-						{
-							for (int j = 0; j < _styleActivationsProp.arraySize; j++)
-							{
-								if (j == i)
-									continue;
+					if (active != activeProp.boolValue)
+						activeProp.boolValue = active;
 
-								_styleActivationsProp.GetArrayElementAtIndex(j)
-									.FindPropertyRelative(nameof(StyleActivation.Active)).boolValue = false;
-							}
-						}
-					}
+					var removeClicked = StylingEditorGUI.ButtonGroupButton(
+						content: new GUIContent("✕", tooltip: "Remove this style activation"),
+						buttonIndex: 1,
+						buttonCount: 2,
+						options: GUILayout.Width(24f)
+					);
 
-					if (GUILayout.Button("✕", GUILayout.Width(24f)))
+					if (removeClicked)
 						removeAt = i;
 				}
 			}
 
 			if (removeAt >= 0)
 				_styleActivationsProp.DeleteArrayElementAtIndex(removeAt);
-
-			if (GUILayout.Button("Add Style Activation"))
-			{
-				_styleActivationsProp.arraySize++;
-				var entry = _styleActivationsProp.GetArrayElementAtIndex(_styleActivationsProp.arraySize - 1);
-				entry.FindPropertyRelative(nameof(StyleActivation.Name)).stringValue = string.Empty;
-				entry.FindPropertyRelative(nameof(StyleActivation.Active)).boolValue = !isToggleGroup;
-			}
-
-			serializedObject.ApplyModifiedProperties();
 		}
 	}
 }

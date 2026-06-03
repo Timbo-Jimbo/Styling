@@ -140,14 +140,21 @@ namespace TimboJimboEditor.Styling
 						buttonCount: 3,
 						onHoldStart: () => BeginPreview(BaselinePreviewKey),
 						onHoldEnd: () => EndPreview(), 
-						options: GUILayout.Width(70f)
+						options: GUILayout.Width(92f)
 					);
 
-					if(StylingEditorGUI.ButtonGroupButton(new GUIContent("Edit"), buttonIndex: 1, buttonCount: 3, options: GUILayout.Width(50f)))
+					if(StylingEditorGUI.ButtonGroupButton(new GUIContent("Edit"), buttonIndex: 1, buttonCount: 3, options: GUILayout.Width(64)))
 						StyleSheetRecordingSession.StartEditingBaseline(_sheet);
 
 					using (new EditorGUI.DisabledScope(true))
-						StylingEditorGUI.ButtonGroupButton(new GUIContent("Delete"), buttonIndex: 2, buttonCount: 3, options: GUILayout.Width(60f));
+					{
+						StylingEditorGUI.ButtonGroupButton(
+							content: new GUIContent("✕", tooltip: "Remove this style activation"),
+							buttonIndex: 2,
+							buttonCount: 3,
+							options: GUILayout.Width(24f)
+						);
+					}
 				}
 			}
 
@@ -202,14 +209,21 @@ namespace TimboJimboEditor.Styling
 						buttonCount: 3,
 						onHoldStart: () => BeginPreview(style.Name),
 						onHoldEnd: () => EndPreview(), 
-						options: GUILayout.Width(70f)
+						options: GUILayout.Width(92)
 					);
 
-					if (StylingEditorGUI.ButtonGroupButton(new GUIContent("Edit"), buttonIndex: 1, buttonCount: 3, options: GUILayout.Width(50f)))
+					if (StylingEditorGUI.ButtonGroupButton(new GUIContent("Edit"), buttonIndex: 1, buttonCount: 3, options: GUILayout.Width(64)))
 						StyleSheetRecordingSession.StartEditing(_sheet, styleIndex);
 
-					if (StylingEditorGUI.ButtonGroupButton(new GUIContent("Delete"), buttonIndex: 2, buttonCount: 3, options: GUILayout.Width(60f)))
+					if(StylingEditorGUI.ButtonGroupButton(
+						content: new GUIContent("✕", tooltip: "Remove this style activation"),
+						buttonIndex: 2,
+						buttonCount: 3,
+						options: GUILayout.Width(24f)
+					))
+					{
 						requestDelete = true;
+					}
 				}
 			}
 
