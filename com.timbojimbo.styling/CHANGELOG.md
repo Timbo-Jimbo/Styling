@@ -1,3 +1,7 @@
+## [0.3.1] - 04/06/2026
+
+- Updated Readme.
+
 ## [0.3.0] - 03/06/2026
 - Transiton options are now per-property-scope instead of style-sheet-scope
 - Added more `EaseType`s instead of just a hard-coded OutCubic ease
