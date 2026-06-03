@@ -55,6 +55,7 @@ namespace TimboJimboEditor.Styling
 
 	internal sealed class ValuesTableMultiColumnHeader : MultiColumnHeader
 	{
+		private static GUIStyle s_propertiesHeader;
 		private static GUIStyle s_standardHeader;
 		private static GUIStyle s_italicHeader;
 		private readonly int _baselineColumnIndex;
@@ -83,7 +84,7 @@ namespace TimboJimboEditor.Styling
 							};
 						}
 
-						GUILayout.Label(column.headerContent, s_italicHeader, GUILayout.ExpandWidth(true));
+						GUILayout.Label(column.headerContent, s_italicHeader, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
 
 						if (StylingEditorGUI.DrawImportButton(tooltip: "Sync values from scene"))
 							_syncBaselineFromScene?.Invoke();
@@ -100,7 +101,18 @@ namespace TimboJimboEditor.Styling
 							};
 						}
 
-						GUILayout.Label(column.headerContent, s_standardHeader, GUILayout.ExpandWidth(true));
+						if(s_propertiesHeader == null)
+						{
+							s_propertiesHeader = new GUIStyle(s_standardHeader)
+							{
+								alignment = TextAnchor.MiddleLeft,
+								padding = new RectOffset(4, 0, 0, 0)
+							};
+						}
+
+						var style = columnIndex == 0 ? s_propertiesHeader : s_standardHeader;
+
+						GUILayout.Label(column.headerContent, style, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
 					}
 				}
 			}

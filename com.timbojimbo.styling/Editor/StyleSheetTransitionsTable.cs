@@ -52,6 +52,7 @@ namespace TimboJimboEditor.Styling
 	internal sealed class TransitionsTableMultiColumnHeader : MultiColumnHeader
 	{
 		private static GUIStyle s_standardHeader;
+		private static GUIStyle s_propertiesHeader;
 
 		public TransitionsTableMultiColumnHeader(MultiColumnHeaderState state) : base(state)
 		{
@@ -70,9 +71,19 @@ namespace TimboJimboEditor.Styling
 					};
 				}
 
+				if (s_propertiesHeader == null)
+				{
+					s_propertiesHeader = new GUIStyle(EditorStyles.label)
+					{
+						alignment = TextAnchor.MiddleLeft,
+						padding = new RectOffset(4, 0, 0, 0)
+					};
+				}
+
 				using (new EditorGUILayout.HorizontalScope())
 				{
-					GUILayout.Label(column.headerContent, s_standardHeader, GUILayout.ExpandWidth(true));
+					var style = columnIndex == 0 ? s_propertiesHeader : s_standardHeader;
+					GUILayout.Label(column.headerContent, style, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
 				}
 			}
 		}

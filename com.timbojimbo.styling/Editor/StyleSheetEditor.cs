@@ -18,13 +18,9 @@ namespace TimboJimboEditor.Styling
 
 		private StyleSheetValuesTable _valuesTable;
 		private StyleSheetTransitionsTable _transitionsTable;
-		private readonly List<Rect> _previewRects = new List<Rect>();
-		private readonly List<string> _previewRectNames = new List<string>();
 		
-		private bool _propertyTableExpanded;
 		private bool _isPreviewing;
 		private string _previewStyleName;
-		private static GUIStyle PreviewChipText;
 
 		private static bool StylesFoldoutExpanded
 		{
@@ -126,6 +122,8 @@ namespace TimboJimboEditor.Styling
 
 		private void DrawStyleControlsList(bool isAnyRecording)
 		{
+			StylingEditorGUI.BeginHoldButtonGroup(enabled: !isAnyRecording);
+
 			// Baseline row.
 			using (new GUILayout.HorizontalScope())
 			{
@@ -136,11 +134,20 @@ namespace TimboJimboEditor.Styling
 
 				using (new EditorGUI.DisabledScope(isAnyRecording))
 				{
-					if (GUILayout.Button("Edit", GUILayout.Width(50f)))
+					StylingEditorGUI.ButtonGroupHoldButton(
+						new GUIContent("Preview"), 
+						buttonIndex: 0, 
+						buttonCount: 3,
+						onHoldStart: () => BeginPreview(BaselinePreviewKey),
+						onHoldEnd: () => EndPreview(), 
+						options: GUILayout.Width(70f)
+					);
+
+					if(StylingEditorGUI.ButtonGroupButton(new GUIContent("Edit"), buttonIndex: 1, buttonCount: 3, options: GUILayout.Width(50f)))
 						StyleSheetRecordingSession.StartEditingBaseline(_sheet);
-						
+
 					using (new EditorGUI.DisabledScope(true))
-						GUILayout.Button("Delete", GUILayout.Width(60f));
+						StylingEditorGUI.ButtonGroupButton(new GUIContent("Delete"), buttonIndex: 2, buttonCount: 3, options: GUILayout.Width(60f));
 				}
 			}
 
@@ -151,6 +158,8 @@ namespace TimboJimboEditor.Styling
 				if (DrawStyleControlsRow(styles[i], i, isAnyRecording))
 					removeAt = i;
 			}
+
+			StylingEditorGUI.EndHoldButtonGroup();
 
 			if (removeAt >= 0)
 			{
@@ -187,10 +196,19 @@ namespace TimboJimboEditor.Styling
 						}
 					}
 
-					if (GUILayout.Button("Edit", GUILayout.Width(50f)))
+					StylingEditorGUI.ButtonGroupHoldButton(
+						new GUIContent("Preview"), 
+						buttonIndex: 0, 
+						buttonCount: 3,
+						onHoldStart: () => BeginPreview(style.Name),
+						onHoldEnd: () => EndPreview(), 
+						options: GUILayout.Width(70f)
+					);
+
+					if (StylingEditorGUI.ButtonGroupButton(new GUIContent("Edit"), buttonIndex: 1, buttonCount: 3, options: GUILayout.Width(50f)))
 						StyleSheetRecordingSession.StartEditing(_sheet, styleIndex);
 
-					if (GUILayout.Button("Delete", GUILayout.Width(60f)))
+					if (StylingEditorGUI.ButtonGroupButton(new GUIContent("Delete"), buttonIndex: 2, buttonCount: 3, options: GUILayout.Width(60f)))
 						requestDelete = true;
 				}
 			}
@@ -223,7 +241,8 @@ namespace TimboJimboEditor.Styling
 							var wantsToShowTransitions = i == 1;
 							if (wantsToShowTransitions != ShowTransitions)
 								ShowTransitions = wantsToShowTransitions;
-						});
+						}, 
+						GUILayout.Width(180f));
 				},
 				onToggle: value => PropertyTableFoldoutExpanded = value
 			);
@@ -324,12 +343,7 @@ namespace TimboJimboEditor.Styling
 			if (Event.current.type == EventType.Repaint)
 				background?.Draw(rect, false, false, false, false);
 
-			_previewRects.Clear();
-			_previewRectNames.Clear();
-
 			const float padding = 6f;
-			const float sectionSpacing = 8f;
-			const float labelSpacing = 3f;
 
 			var contentRect = new Rect(
 				rect.x + padding,
@@ -340,101 +354,7 @@ namespace TimboJimboEditor.Styling
 			if (contentRect.width <= 0f || contentRect.height <= 0f)
 				return;
 
-			float y = contentRect.y;
-
-			EditorGUI.LabelField(
-				new Rect(contentRect.x, y, contentRect.width, EditorGUIUtility.singleLineHeight),
-				"Hold to Preview",
-				EditorStyles.boldLabel);
-			y += EditorGUIUtility.singleLineHeight + labelSpacing;
-
-			if (StyleSheetRecordingSession.IsRecording)
-			{
-				EditorGUI.LabelField(
-					new Rect(contentRect.x, y, contentRect.width, EditorGUIUtility.singleLineHeight),
-					"Preview is disabled while recording.",
-					EditorStyles.wordWrappedMiniLabel);
-				y += EditorGUIUtility.singleLineHeight;
-			}
-			else if (TryGetPreviewStyleNames(out var styleNames))
-			{
-				y = DrawPreviewButtons(contentRect, y, styleNames);
-			}
-			else
-			{
-				EditorGUI.LabelField(
-					new Rect(contentRect.x, y, contentRect.width, EditorGUIUtility.singleLineHeight),
-					"No previewable styles found.",
-					EditorStyles.wordWrappedMiniLabel);
-				y += EditorGUIUtility.singleLineHeight;
-			}
-
-			y += sectionSpacing;
-			DrawGameObjectScopeSection(contentRect, y);
-
-			if (!StyleSheetRecordingSession.IsRecording)
-				HandlePreviewEvents();
-		}
-
-		private float DrawPreviewButtons(Rect contentRect, float startY, IReadOnlyList<string> styleNames)
-		{
-			const float verticalSpacing = 4f;
-			const float minItemWidth = 72f;
-			const float itemHeight = 24f;
-
-			float x = contentRect.x;
-			float y = startY;
-			float maxX = contentRect.xMax;
-
-			for (int i = 0; i < styleNames.Count; i++)
-			{
-				var styleName = styleNames[i];
-				var size = EditorStyles.miniButton.CalcSize(new GUIContent(styleName));
-				float width = Mathf.Max(minItemWidth, size.x + 16f);
-
-				if (x > contentRect.x && x + width > maxX)
-				{
-					x = contentRect.x;
-					y += itemHeight + verticalSpacing;
-				}
-
-				var itemRect = new Rect(x, y, Mathf.Min(width, contentRect.width), itemHeight);
-				_previewRects.Add(itemRect);
-				_previewRectNames.Add(styleName);
-				DrawPreviewChip(itemRect, styleName, _isPreviewing && _previewStyleName == styleName);
-
-				x = itemRect.xMax + verticalSpacing;
-			}
-
-			return y + itemHeight;
-		}
-
-		private static void DrawPreviewChip(Rect rect, string styleName, bool isActive)
-		{
-			if (Event.current.type != EventType.Repaint)
-				return;
-
-			var fill = isActive
-				? GUI.skin.settings.selectionColor
-				: new Color(0.24f, 0.24f, 0.24f, 1f);
-			var border = isActive
-				? GUI.skin.settings.selectionColor * new Color(0.85f, 0.85f, 0.85f, 1f)
-				: new Color(0.17f, 0.17f, 0.17f, 1f);
-			border.a = 1f;
-
-			EditorGUI.DrawRect(rect, border);
-			var innerRect = new Rect(rect.x + 1f, rect.y + 1f, Mathf.Max(0f, rect.width - 2f), Mathf.Max(0f, rect.height - 2f));
-			EditorGUI.DrawRect(innerRect, fill);
-
-			if (PreviewChipText == null)
-			{
-				PreviewChipText = new GUIStyle(EditorStyles.label)
-				{
-					alignment = TextAnchor.MiddleCenter
-				};
-			}
-
-			GUI.Label(innerRect, styleName, PreviewChipText);
+			DrawGameObjectScopeSection(contentRect, contentRect.y);
 		}
 
 		private void DrawGameObjectScopeSection(Rect contentRect, float startY)
@@ -512,115 +432,6 @@ namespace TimboJimboEditor.Styling
 
 				return string.Join(", ", parts);
 			}
-		}
-
-		private bool TryGetPreviewStyleNames(out List<string> styleNames)
-		{
-			styleNames = new List<string>();
-			if (_sheet == null || _sheet.gameObject == null)
-				return false;
-
-			StylingSystem.GetSupportedStyleNames(_sheet.gameObject, styleNames, includeChildren: true);
-			return styleNames.Count > 0;
-		}
-
-		private void HandlePreviewEvents()
-		{
-			int controlId = GUIUtility.GetControlID(FocusType.Passive);
-			var evt = Event.current;
-
-			switch (evt.GetTypeForControl(controlId))
-			{
-				case EventType.MouseDown:
-					if (evt.button == 0)
-					{
-						var hit = HitTestPreviewRects(evt.mousePosition);
-						if (hit != null)
-						{
-							GUIUtility.hotControl = controlId;
-							BeginPreview(hit);
-							evt.Use();
-						}
-					}
-					break;
-
-				case EventType.MouseDrag:
-					if (GUIUtility.hotControl == controlId)
-					{
-						var hit = HitTestPreviewRects(evt.mousePosition);
-						if (hit != _previewStyleName)
-						{
-							if (hit != null)
-								BeginPreview(hit);
-							else
-								EndPreview();
-
-							Repaint();
-						}
-
-						evt.Use();
-					}
-					break;
-
-				case EventType.MouseUp:
-					if (GUIUtility.hotControl == controlId && evt.button == 0)
-					{
-						GUIUtility.hotControl = 0;
-						EndPreview();
-						evt.Use();
-						Repaint();
-					}
-					break;
-			}
-		}
-
-		private string HitTestPreviewRects(Vector2 mousePos)
-		{
-			if (_previewRects.Count == 0)
-				return null;
-
-			Rect bounds = default;
-			for (int i = 0; i < _previewRects.Count; i++)
-			{
-				if (i == 0)
-				{
-					bounds = _previewRects[i];
-				}
-				else
-				{
-					bounds = Rect.MinMaxRect(
-						Mathf.Min(bounds.xMin, _previewRects[i].xMin),
-						Mathf.Min(bounds.yMin, _previewRects[i].yMin),
-						Mathf.Max(bounds.xMax, _previewRects[i].xMax),
-						Mathf.Max(bounds.yMax, _previewRects[i].yMax));
-				}
-			}
-
-			if (!bounds.Contains(mousePos))
-				return null;
-
-			int hit = -1;
-			float hitDistance = float.MaxValue;
-			for (int i = 0; i < _previewRects.Count; i++)
-			{
-				if (_previewRects[i].Contains(mousePos))
-				{
-					hit = i;
-					break;
-				}
-
-				var closestPoint = new Vector2(
-					Mathf.Clamp(mousePos.x, _previewRects[i].xMin, _previewRects[i].xMax),
-					Mathf.Clamp(mousePos.y, _previewRects[i].yMin, _previewRects[i].yMax));
-				float distance = Vector2.Distance(mousePos, closestPoint);
-				if (distance < hitDistance)
-				{
-					hitDistance = distance;
-					hit = i;
-				}
-			}
-
-			return hit >= 0 ? _previewRectNames[hit] : null;
 		}
 
 		internal void BeginPreview(string styleName)

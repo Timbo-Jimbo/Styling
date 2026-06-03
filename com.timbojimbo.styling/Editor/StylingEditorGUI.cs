@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using TimboJimbo.PropertyBindings;
 using TimboJimbo.Styling;
 using UnityEditor;
@@ -190,6 +191,215 @@ namespace TimboJimboEditor.Styling
             GUIContent content = new GUIContent(label ?? icon.text, icon.image, tooltip ?? icon.tooltip);
 
             return GUILayout.Button(content, Styles.GhostIconStyle, GUILayout.ExpandWidth(false));
+        }
+
+        public static bool ButtonGroupButton(GUIContent content, int buttonIndex, int buttonCount, Action<int> onClick = null, params GUILayoutOption[] options)
+        {
+            var leftStyle = EditorStyles.miniButtonLeft;
+            var midStyle = EditorStyles.miniButtonMid;
+            var rightStyle = EditorStyles.miniButtonRight;
+            var standaloneStyle = EditorStyles.miniButton;
+
+            GUIStyle style = buttonIndex switch
+            {
+                0 when buttonCount == 1 => standaloneStyle,
+                0 => leftStyle,
+                _ when buttonIndex == buttonCount - 1 => rightStyle,
+                _ => midStyle,
+            };
+
+            if (GUILayout.Button(content, style, options))
+            {
+                onClick?.Invoke(buttonIndex);
+                return true;
+            }
+
+            return false;
+        }
+
+        // ── Hold button group ────────────────────────────────────────────────────
+        // A group of "hold" buttons that share press-and-drag behavior: press one and drag
+        // across its siblings to move the active hold from button to button (used to scrub a
+        // live preview across rows). Wrap the buttons with
+        // BeginHoldButtonGroup()/EndHoldButtonGroup(); each ButtonGroupHoldButton registers
+        // itself, and EndHoldButtonGroup processes the shared press/drag/release.
+        private struct HoldButtonEntry
+        {
+            public Rect Rect;
+            public Action OnHoldStart;
+            public Action OnHoldEnd;
+        }
+
+        private static readonly List<HoldButtonEntry> _holdButtons = new List<HoldButtonEntry>();
+        private static bool _holdGroupEnabled;
+        private static int _holdGroupControlId = -1;
+        private static int _activeHoldButton = -1;
+
+        /// <summary>
+        /// Begins a group of hold buttons. Call before drawing the buttons, then
+        /// <see cref="EndHoldButtonGroup"/> after. When <paramref name="enabled"/> is false the
+        /// buttons still draw, but no press/drag input is processed.
+        /// </summary>
+        public static void BeginHoldButtonGroup(bool enabled = true)
+        {
+            _holdButtons.Clear();
+            _holdGroupEnabled = enabled;
+
+            if (!enabled)
+            {
+                _holdGroupControlId = -1;
+                _activeHoldButton = -1;
+            }
+        }
+
+        public static bool ButtonGroupHoldButton(GUIContent content, int buttonIndex, int buttonCount, Action onHoldStart = null, Action onHoldEnd = null, params GUILayoutOption[] options)
+        {
+            var leftStyle = EditorStyles.miniButtonLeft;
+            var midStyle = EditorStyles.miniButtonMid;
+            var rightStyle = EditorStyles.miniButtonRight;
+            var standaloneStyle = EditorStyles.miniButton;
+
+            GUIStyle style = buttonIndex switch
+            {
+                0 when buttonCount == 1 => standaloneStyle,
+                0 => leftStyle,
+                _ when buttonIndex == buttonCount - 1 => rightStyle,
+                _ => midStyle,
+            };
+
+            var rect = GUILayoutUtility.GetRect(content, style, options);
+            var evt = Event.current;
+
+            int index = -1;
+            if (_holdGroupEnabled)
+            {
+                index = _holdButtons.Count;
+                _holdButtons.Add(new HoldButtonEntry { Rect = rect, OnHoldStart = onHoldStart, OnHoldEnd = onHoldEnd });
+            }
+
+            bool isActive = _holdGroupEnabled && _holdGroupControlId != -1 && _activeHoldButton == index;
+
+            if (evt.type == EventType.Repaint)
+            {
+                bool isHover = rect.Contains(evt.mousePosition);
+                style.Draw(rect, content, isHover, isActive, isActive, false);
+            }
+
+            EditorGUIUtility.AddCursorRect(rect, MouseCursor.Link);
+
+            return isActive;
+        }
+
+        public static bool HoldButton(GUIContent content, Action onHoldStart = null, Action onHoldEnd = null, params GUILayoutOption[] options)
+        {
+            return ButtonGroupHoldButton(content, 0, 1, onHoldStart, onHoldEnd, options);
+        }
+
+        /// <summary>
+        /// Processes press/drag/release for the buttons registered since the last
+        /// <see cref="BeginHoldButtonGroup"/>. Dragging across buttons switches which one is held,
+        /// invoking the previous button's onHoldEnd and the new button's onHoldStart.
+        /// </summary>
+        public static void EndHoldButtonGroup()
+        {
+            if (!_holdGroupEnabled || _holdButtons.Count == 0)
+                return;
+
+            int controlId = GUIUtility.GetControlID(FocusType.Passive);
+            var evt = Event.current;
+
+            switch (evt.GetTypeForControl(controlId))
+            {
+                case EventType.MouseDown:
+                    if (evt.button == 0)
+                    {
+                        int hit = HitTestHoldButtons(evt.mousePosition);
+                        if (hit >= 0)
+                        {
+                            GUIUtility.hotControl = controlId;
+                            _holdGroupControlId = controlId;
+                            SetActiveHoldButton(hit);
+                            evt.Use();
+                        }
+                    }
+                    break;
+
+                case EventType.MouseDrag:
+                    if (GUIUtility.hotControl == controlId)
+                    {
+                        SetActiveHoldButton(HitTestHoldButtons(evt.mousePosition));
+                        evt.Use();
+                    }
+                    break;
+
+                case EventType.MouseUp:
+                    if (GUIUtility.hotControl == controlId && evt.button == 0)
+                    {
+                        GUIUtility.hotControl = 0;
+                        _holdGroupControlId = -1;
+                        SetActiveHoldButton(-1);
+                        evt.Use();
+                    }
+                    break;
+            }
+        }
+
+        private static void SetActiveHoldButton(int index)
+        {
+            if (_activeHoldButton == index)
+                return;
+
+            if (_activeHoldButton >= 0 && _activeHoldButton < _holdButtons.Count)
+                _holdButtons[_activeHoldButton].OnHoldEnd?.Invoke();
+
+            _activeHoldButton = index;
+
+            if (index >= 0 && index < _holdButtons.Count)
+                _holdButtons[index].OnHoldStart?.Invoke();
+        }
+
+        // Returns the index of the button under the cursor, snapping to the nearest button when
+        // the cursor is between buttons but still within the group's combined bounds; -1 if the
+        // cursor is outside the group entirely.
+        private static int HitTestHoldButtons(Vector2 mousePos)
+        {
+            if (_holdButtons.Count == 0)
+                return -1;
+
+            Rect bounds = _holdButtons[0].Rect;
+            for (int i = 1; i < _holdButtons.Count; i++)
+            {
+                var r = _holdButtons[i].Rect;
+                bounds = Rect.MinMaxRect(
+                    Mathf.Min(bounds.xMin, r.xMin),
+                    Mathf.Min(bounds.yMin, r.yMin),
+                    Mathf.Max(bounds.xMax, r.xMax),
+                    Mathf.Max(bounds.yMax, r.yMax));
+            }
+
+            if (!bounds.Contains(mousePos))
+                return -1;
+
+            int hit = -1;
+            float hitDistance = float.MaxValue;
+            for (int i = 0; i < _holdButtons.Count; i++)
+            {
+                var r = _holdButtons[i].Rect;
+                if (r.Contains(mousePos))
+                    return i;
+
+                var closestPoint = new Vector2(
+                    Mathf.Clamp(mousePos.x, r.xMin, r.xMax),
+                    Mathf.Clamp(mousePos.y, r.yMin, r.yMax));
+                float distance = Vector2.Distance(mousePos, closestPoint);
+                if (distance < hitDistance)
+                {
+                    hitDistance = distance;
+                    hit = i;
+                }
+            }
+
+            return hit;
         }
 
 
