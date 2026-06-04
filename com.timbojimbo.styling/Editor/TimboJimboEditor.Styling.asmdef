@@ -2,6 +2,7 @@
     "name": "TimboJimboEditor.Styling",
     "rootNamespace": "TimboJimboEditor.Styling",
     "references": [
+        "TimboJimbo.Core.Runtime",
         "TimboJimbo.Styling.Runtime",
         "TimboJimbo.PropertyBindings.Runtime",
         "TimboJimboEditor.PropertyBindings"

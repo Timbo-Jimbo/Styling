@@ -2,6 +2,7 @@
     "name": "TimboJimbo.Styling.Runtime",
     "rootNamespace": "",
     "references": [
+        "TimboJimbo.Core.Runtime",
         "TimboJimbo.PropertyBindings.Runtime"
     ],
     "includePlatforms": [],
