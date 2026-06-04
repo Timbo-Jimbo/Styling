@@ -1,3 +1,7 @@
+## [Unreleased] - 04/06/2026
+
+- Allow user to specify default values for transition properties
+
 ## [0.3.1] - 04/06/2026
 
 - Updated Readme.

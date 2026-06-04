@@ -123,6 +123,11 @@ namespace TimboJimboEditor.Styling
                 var (family, types) = s_groups[g];
 
                 string rowLabel = family;
+                Rect rowRect = new Rect(panel.x, y, panel.width, ButtonHeight);
+                bool isHovered = rowRect.Contains(Event.current.mousePosition);
+
+                if (isHovered)
+                    EditorGUI.DrawRect(new Rect(panel.x, y, FamilyLabelW, ButtonHeight), new Color(1f, 1f, 1f, 0.1f));
 
                 EditorGUI.LabelField(
                     new Rect(panel.x, y, FamilyLabelW, ButtonHeight),

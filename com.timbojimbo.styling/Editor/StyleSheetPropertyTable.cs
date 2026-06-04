@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TimboJimbo.PropertyBindings;
 using TimboJimbo.Styling;
 using TimboJimboEditor.PropertyBindings.Utility;
+using TimboJimboEditor.Styling.Defaults;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
 using UnityEngine;
@@ -41,6 +42,8 @@ namespace TimboJimboEditor.Styling
 	}
 
 	internal enum ColumnTargetKind { Property, Baseline, Style, TransitionEaseType, TransitionDuration, TransitionInterpolation, TransitionDiscreteValueSelection }
+
+	internal enum TransitionFieldKind { Ease, Duration, ColorInterp, Vector2Interp, Vector3Interp, RotationInterp, Discrete }
 
 	internal struct ColumnTarget
 	{
@@ -654,11 +657,14 @@ namespace TimboJimboEditor.Styling
 				return;
 			}
 
+
 			if (!IsContinuousKind(property.Kind))
 			{
 				EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
 				return;
 			}
+
+			HandleTransitionCellContextClick(rect, property, index, transition, ColumnTargetKind.TransitionEaseType);
 
 			using (new EditorGUI.DisabledScope(!transition.Animate))
 			{
@@ -679,6 +685,8 @@ namespace TimboJimboEditor.Styling
 				EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
 				return;
 			}
+
+			HandleTransitionCellContextClick(rect, property, index, transition, ColumnTargetKind.TransitionDuration);
 
 			EditorGUI.BeginChangeCheck();
 			float newDuration = EditorGUI.FloatField(rect, transition.Duration);
@@ -713,10 +721,15 @@ namespace TimboJimboEditor.Styling
 						SetTransitionViaSerializedProperty(index, transition);
 						EditorUtility.SetDirty(_sheet);
 					});
+
+					
+					HandleTransitionCellContextClick(rect, property, index, transition, ColumnTargetKind.TransitionInterpolation);
+
 					return;
 				}
 
 				EditorGUI.BeginChangeCheck();
+				var handleContext = true;
 				switch (property.Kind)
 				{
 					case ValueKind.Quaternion:
@@ -730,6 +743,7 @@ namespace TimboJimboEditor.Styling
 						break;
 					default:
 						EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
+						handleContext = false;
 						return;
 				}
 
@@ -740,6 +754,9 @@ namespace TimboJimboEditor.Styling
 					SetTransitionViaSerializedProperty(index, transition);
 					EditorUtility.SetDirty(_sheet);
 				}
+
+				if (handleContext)
+					HandleTransitionCellContextClick(rect, property, index, transition, ColumnTargetKind.TransitionInterpolation);
 			}
 		}
 
@@ -751,11 +768,14 @@ namespace TimboJimboEditor.Styling
 				return;
 			}
 
+
 			if (IsContinuousKind(property.Kind))
 			{
 				EditorGUI.LabelField(rect, "—", EditorStyles.miniLabel);
 				return;
 			}
+
+			HandleTransitionCellContextClick(rect, property, index, transition, ColumnTargetKind.TransitionDiscreteValueSelection);
 
 			using (new EditorGUI.DisabledScope(!transition.Animate))
 			{
@@ -767,6 +787,227 @@ namespace TimboJimboEditor.Styling
 					EditorUtility.SetDirty(_sheet);
 				});
 			}
+		}
+
+		private void HandleTransitionCellContextClick(Rect rect, BindableProperty property, int configIndex, StylePropertyTransition transition, ColumnTargetKind columnKind)
+		{
+			var evt = Event.current;
+			if (!IsContextMenuEvent(evt, rect))
+				return;
+
+			if (!TryGetTransitionFieldKind(columnKind, property.Kind, out var fieldKind))
+				return;
+
+			var menu = new GenericMenu();
+
+			var currentValue = GetTransitionFieldValue(fieldKind, transition);
+			menu.AddItem(new GUIContent("Copy"), false, () => StyleSheetPropertyTableClipboard.SetTransitionFieldClipboard(fieldKind, currentValue));
+
+			if (StyleSheetPropertyTableClipboard.TryGetTransitionFieldClipboard(fieldKind, out var clipboardValue))
+			{
+				menu.AddItem(new GUIContent("Paste"), false, () =>
+				{
+					Undo.RecordObject(_sheet, "Paste Transition Value");
+					var updated = WithTransitionFieldValue(fieldKind, transition, clipboardValue);
+					SetTransitionViaSerializedProperty(configIndex, updated);
+					EditorUtility.SetDirty(_sheet);
+				});
+			}
+			else
+			{
+				menu.AddDisabledItem(new GUIContent("Paste"));
+			}
+
+			if (fieldKind != TransitionFieldKind.Duration)
+			{
+				menu.AddSeparator(string.Empty);
+
+				var isDefaultAlready = IsFieldDefault(fieldKind, transition);
+				var isOverrideAlready = HasFieldDefaultOverride(property, fieldKind, transition);
+
+				if (isDefaultAlready)
+					menu.AddDisabledItem(new GUIContent($"Set as Default"));
+				else
+					menu.AddItem(new GUIContent($"Set as Default"), false, () => SetFieldAsDefault(fieldKind, transition));
+
+				if (isOverrideAlready)
+					menu.AddItem(new GUIContent($"Remove as Default Override for {GetPropertyDefaultLabel(property)}"), false, () => RemoveFieldDefaultOverride(property, fieldKind));
+				else
+					menu.AddItem(new GUIContent($"Set as Default Override for {GetPropertyDefaultLabel(property)}"), false, () => SetFieldDefaultOverride(property, fieldKind, transition));
+			}
+
+			menu.ShowAsContext();
+			evt.Use();
+		}
+
+		private static bool TryGetTransitionFieldKind(ColumnTargetKind columnKind, ValueKind valueKind, out TransitionFieldKind fieldKind)
+		{
+			switch (columnKind)
+			{
+				case ColumnTargetKind.TransitionEaseType:
+					fieldKind = TransitionFieldKind.Ease;
+					return IsContinuousKind(valueKind);
+
+				case ColumnTargetKind.TransitionDuration:
+					fieldKind = TransitionFieldKind.Duration;
+					return true;
+
+				case ColumnTargetKind.TransitionInterpolation:
+					switch (valueKind)
+					{
+						case ValueKind.Color: fieldKind = TransitionFieldKind.ColorInterp; return true;
+						case ValueKind.Vector2: fieldKind = TransitionFieldKind.Vector2Interp; return true;
+						case ValueKind.Vector3: fieldKind = TransitionFieldKind.Vector3Interp; return true;
+						case ValueKind.Quaternion: fieldKind = TransitionFieldKind.RotationInterp; return true;
+						default: fieldKind = default; return false;
+					}
+
+				case ColumnTargetKind.TransitionDiscreteValueSelection:
+					fieldKind = TransitionFieldKind.Discrete;
+					return !IsContinuousKind(valueKind);
+
+				default:
+					fieldKind = default;
+					return false;
+			}
+		}
+
+		private static object GetTransitionFieldValue(TransitionFieldKind fieldKind, StylePropertyTransition transition)
+		{
+			switch (fieldKind)
+			{
+				case TransitionFieldKind.Ease: return transition.EaseType;
+				case TransitionFieldKind.Duration: return transition.Duration;
+				case TransitionFieldKind.ColorInterp: return transition.Interpolation.Color;
+				case TransitionFieldKind.Vector2Interp: return transition.Interpolation.Vector2;
+				case TransitionFieldKind.Vector3Interp: return transition.Interpolation.Vector3;
+				case TransitionFieldKind.RotationInterp: return transition.Interpolation.Rotation;
+				case TransitionFieldKind.Discrete: return transition.DiscreteValueSelection;
+				default: return null;
+			}
+		}
+
+		private static StylePropertyTransition WithTransitionFieldValue(TransitionFieldKind fieldKind, StylePropertyTransition transition, object value)
+		{
+			var interpolation = transition.Interpolation;
+			switch (fieldKind)
+			{
+				case TransitionFieldKind.Ease:
+					transition.EaseType = (EaseType)value;
+					break;
+				case TransitionFieldKind.Duration:
+					transition.Duration = Mathf.Max(0f, (float)value);
+					break;
+				case TransitionFieldKind.ColorInterp:
+					interpolation.Color = (ColorInterpolationMode)value;
+					transition.Interpolation = interpolation;
+					break;
+				case TransitionFieldKind.Vector2Interp:
+					interpolation.Vector2 = (VectorInterpolationMode)value;
+					transition.Interpolation = interpolation;
+					break;
+				case TransitionFieldKind.Vector3Interp:
+					interpolation.Vector3 = (VectorInterpolationMode)value;
+					transition.Interpolation = interpolation;
+					break;
+				case TransitionFieldKind.RotationInterp:
+					interpolation.Rotation = (RotationInterpolationMode)value;
+					transition.Interpolation = interpolation;
+					break;
+				case TransitionFieldKind.Discrete:
+					transition.DiscreteValueSelection = (DiscreteValueSelectionMode)value;
+					break;
+			}
+
+			return transition;
+		}
+
+		private bool IsFieldDefault(TransitionFieldKind fieldKind, StylePropertyTransition transition)
+		{
+			var defaults = StylingSettings.Defaults;
+			switch (fieldKind)
+			{
+				case TransitionFieldKind.Ease: return defaults.DefaultEaseType == transition.EaseType;
+				case TransitionFieldKind.ColorInterp: return defaults.DefaultColorInterpolationMode == transition.Interpolation.Color;
+				case TransitionFieldKind.Vector2Interp: return defaults.DefaultVector2InterpolationMode == transition.Interpolation.Vector2;
+				case TransitionFieldKind.Vector3Interp: return defaults.DefaultVector3InterpolationMode == transition.Interpolation.Vector3;
+				case TransitionFieldKind.RotationInterp: return defaults.DefaultRotationInterpolationMode == transition.Interpolation.Rotation;
+				case TransitionFieldKind.Discrete: return defaults.DefaultDiscreteValueSelectionMode == transition.DiscreteValueSelection;
+				default: return true;
+			}
+		}
+
+		private void SetFieldAsDefault(TransitionFieldKind fieldKind, StylePropertyTransition transition)
+		{
+			var defaults = StylingSettings.Defaults;
+			switch (fieldKind)
+			{
+				case TransitionFieldKind.Ease: defaults.DefaultEaseType = transition.EaseType; break;
+				case TransitionFieldKind.ColorInterp: defaults.DefaultColorInterpolationMode = transition.Interpolation.Color; break;
+				case TransitionFieldKind.Vector2Interp: defaults.DefaultVector2InterpolationMode = transition.Interpolation.Vector2; break;
+				case TransitionFieldKind.Vector3Interp: defaults.DefaultVector3InterpolationMode = transition.Interpolation.Vector3; break;
+				case TransitionFieldKind.RotationInterp: defaults.DefaultRotationInterpolationMode = transition.Interpolation.Rotation; break;
+				case TransitionFieldKind.Discrete: defaults.DefaultDiscreteValueSelectionMode = transition.DiscreteValueSelection; break;
+			}
+
+			StylingSettings.Save();
+		}
+
+		private bool HasFieldDefaultOverride(BindableProperty property, TransitionFieldKind fieldKind, StylePropertyTransition transition)
+		{
+			var defaults = StylingSettings.Defaults;
+			switch (fieldKind)
+			{
+				case TransitionFieldKind.Ease:
+					return defaults.GetOverride(property, out EaseType ease) && ease == transition.EaseType;
+				case TransitionFieldKind.ColorInterp:
+					return defaults.GetOverride(property, out ColorInterpolationMode colorInterp) && colorInterp == transition.Interpolation.Color;
+				case TransitionFieldKind.Vector2Interp:
+					return defaults.GetOverride(property, out VectorInterpolationMode vector2Interp) && vector2Interp == transition.Interpolation.Vector2;
+				case TransitionFieldKind.Vector3Interp:
+					return defaults.GetOverride(property, out VectorInterpolationMode vector3Interp) && vector3Interp == transition.Interpolation.Vector3;
+				case TransitionFieldKind.RotationInterp:
+					return defaults.GetOverride(property, out RotationInterpolationMode rotationInterp) && rotationInterp == transition.Interpolation.Rotation;
+				case TransitionFieldKind.Discrete:
+					return defaults.GetOverride(property, out DiscreteValueSelectionMode discreteSelection) && discreteSelection == transition.DiscreteValueSelection;
+				default:
+					return false;
+			}
+		}
+
+		private void SetFieldDefaultOverride(BindableProperty property, TransitionFieldKind fieldKind, StylePropertyTransition transition)
+		{
+			var defaults = StylingSettings.Defaults;
+			switch (fieldKind)
+			{
+				case TransitionFieldKind.Ease: defaults.SetOverride(property, transition.EaseType); break;
+				case TransitionFieldKind.ColorInterp: defaults.SetOverride(property, transition.Interpolation.Color); break;
+				case TransitionFieldKind.Vector2Interp: defaults.SetOverride(property, transition.Interpolation.Vector2); break;
+				case TransitionFieldKind.Vector3Interp: defaults.SetOverride(property, transition.Interpolation.Vector3); break;
+				case TransitionFieldKind.RotationInterp: defaults.SetOverride(property, transition.Interpolation.Rotation); break;
+				case TransitionFieldKind.Discrete: defaults.SetOverride(property, transition.DiscreteValueSelection); break;
+			}
+		}
+
+		private void RemoveFieldDefaultOverride(BindableProperty property, TransitionFieldKind fieldKind)
+		{
+			var defaults = StylingSettings.Defaults;
+			switch (fieldKind)
+			{
+				case TransitionFieldKind.Ease: defaults.RemoveOverride<EaseType>(property); break;
+				case TransitionFieldKind.ColorInterp: defaults.RemoveOverride<ColorInterpolationMode>(property); break;
+				case TransitionFieldKind.Vector2Interp: defaults.RemoveOverride<VectorInterpolationMode>(property); break;
+				case TransitionFieldKind.Vector3Interp: defaults.RemoveOverride<VectorInterpolationMode>(property); break;
+				case TransitionFieldKind.RotationInterp: defaults.RemoveOverride<RotationInterpolationMode>(property); break;
+				case TransitionFieldKind.Discrete: defaults.RemoveOverride<DiscreteValueSelectionMode>(property); break;
+			}
+		}
+
+		private static string GetPropertyDefaultLabel(BindableProperty property)
+		{
+			var typeName = ObjectNames.NicifyVariableName(property.Target.GetType().Name);
+			var propName = ObjectNames.NicifyVariableName(property.Path);
+			return $"{propName} on {typeName}";
 		}
 	}
 
@@ -792,5 +1033,28 @@ namespace TimboJimboEditor.Styling
 			value = default;
 			return false;
 		}
+
+		public static void SetTransitionFieldClipboard(TransitionFieldKind kind, object value)
+		{
+			_transitionFieldKind = kind;
+			_transitionFieldValue = value;
+			_hasTransitionField = true;
+		}
+
+		public static bool TryGetTransitionFieldClipboard(TransitionFieldKind kind, out object value)
+		{
+			if (_hasTransitionField && _transitionFieldKind == kind)
+			{
+				value = _transitionFieldValue;
+				return true;
+			}
+
+			value = default;
+			return false;
+		}
+
+		private static TransitionFieldKind _transitionFieldKind;
+		private static object _transitionFieldValue;
+		private static bool _hasTransitionField;
 	}
 }

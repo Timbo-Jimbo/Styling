@@ -21,14 +21,34 @@ namespace TimboJimbo.Styling
     }
 
     [Serializable] 
-    public struct StylePropertyTransition
+    public partial struct StylePropertyTransition
     {
         public bool Animate => Duration > 0;
         public EaseType EaseType;
         public float Duration;
         public InterpolationConfig Interpolation;
         public DiscreteValueSelectionMode DiscreteValueSelection;
-        public static StylePropertyTransition Instant => new StylePropertyTransition { EaseType = EaseType.InOutCubic, Duration = 0, Interpolation = default, DiscreteValueSelection = DiscreteValueSelectionMode.RightSide };
+        public static StylePropertyTransition Instant => new StylePropertyTransition { Duration = 0 };
+    }
+
+    public partial struct StylePropertyTransition
+    {
+        private static IDefaultsResolver _resolver;
+
+        public static StylePropertyTransition GetDefault(BindableProperty property, float duration = 0f)
+        {
+            return _resolver == null ? Instant : _resolver.GetDefaultTransition(property, duration);
+        }
+
+        internal static void SetDefaultsResolver(IDefaultsResolver resolver)
+        {
+            _resolver = resolver;
+        }
+
+        internal interface IDefaultsResolver
+        {
+            StylePropertyTransition GetDefaultTransition(BindableProperty property, float duration = 0f);
+        }
     }
 
     [Serializable]
@@ -264,7 +284,7 @@ namespace TimboJimbo.Styling
 
                     if (!Util.ContainsProperty(_propertyConfigs, property))
                     {
-                        _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = StylePropertyTransition.Instant });
+                        _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = StylePropertyTransition.GetDefault(property) });
                         addedProperty = true;
                     }
                 }
@@ -374,7 +394,7 @@ namespace TimboJimbo.Styling
 
                 if (!Util.ContainsProperty(_propertyConfigs, property))
                 {
-                    _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = StylePropertyTransition.Instant });
+                    _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = StylePropertyTransition.GetDefault(property) });
                     _bindingCollectionManager.Invalidate();
                 }
                 else if (addedBaselineEntry)
@@ -647,7 +667,7 @@ namespace TimboJimbo.Styling
 
                 if (!Util.ContainsProperty(_propertyConfigs, property))
                 {
-                    _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = StylePropertyTransition.Instant });
+                    _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = StylePropertyTransition.GetDefault(property) });
                     changed = true;
                 }
             }
