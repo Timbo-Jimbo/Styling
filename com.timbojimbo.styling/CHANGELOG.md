@@ -1,6 +1,7 @@
-## [Unreleased] - 04/06/2026
+## [0.4.0] - 04/06/2026
 
 - Allow user to specify default values for transition properties
+- Moved some shared code to Core package
 
 ## [0.3.1] - 04/06/2026
 
