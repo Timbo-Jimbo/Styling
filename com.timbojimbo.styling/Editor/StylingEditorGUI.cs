@@ -35,6 +35,15 @@ namespace TimboJimboEditor.Styling
             }
         }
 
+        public static void ColorInterpolationModePopup(Rect rect, ColorInterpolationMode current, Action<ColorInterpolationMode> onSelected)
+        {
+            if (EditorGUI.DropdownButton(rect, new GUIContent(current.ToString()), FocusType.Passive))
+            {
+                var popup = new ColorInterpolationModePickerPopup(current, onSelected);
+                PopupWindow.Show(rect, popup);
+            }
+        }
+
         /// <summary>Direction an arrow pip points toward (its tip).</summary>
         public enum PipDirection { Up, Down, Left, Right }
 
@@ -594,6 +603,12 @@ namespace TimboJimboEditor.Styling
         {
             var rect = EditorGUILayout.GetControlRect(options);
             StylingEditorGUI.DiscreteValueSelectionModePopup(rect, current, onSelected);
+        }
+
+        public static void ColorInterpolationModePopup(ColorInterpolationMode current, Action<ColorInterpolationMode> onSelected, params GUILayoutOption[] options)
+        {
+            var rect = EditorGUILayout.GetControlRect(options);
+            StylingEditorGUI.ColorInterpolationModePopup(rect, current, onSelected);
         }
 
         public static int SegmentedControl(int selected, string[] labels, Action<int> onSelected, params GUILayoutOption[] options)

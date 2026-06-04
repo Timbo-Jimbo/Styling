@@ -702,14 +702,25 @@ namespace TimboJimboEditor.Styling
 			using (new EditorGUI.DisabledScope(!transition.Animate))
 			{
 				var config = transition.Interpolation;
+
+				if (property.Kind == ValueKind.Color)
+				{
+					StylingEditorGUI.ColorInterpolationModePopup(rect, config.Color, newMode =>
+					{
+						Undo.RecordObject(_sheet, "Change Transition Interpolation");
+						config.Color = newMode;
+						transition.Interpolation = config;
+						SetTransitionViaSerializedProperty(index, transition);
+						EditorUtility.SetDirty(_sheet);
+					});
+					return;
+				}
+
 				EditorGUI.BeginChangeCheck();
 				switch (property.Kind)
 				{
 					case ValueKind.Quaternion:
 						config.Rotation = (RotationInterpolationMode)EditorGUI.EnumPopup(rect, config.Rotation);
-						break;
-					case ValueKind.Color:
-						config.Color = (ColorInterpolationMode)EditorGUI.EnumPopup(rect, config.Color);
 						break;
 					case ValueKind.Vector2:
 						config.Vector2 = (VectorInterpolationMode)EditorGUI.EnumPopup(rect, config.Vector2);
