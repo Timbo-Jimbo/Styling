@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
+using TimboJimbo.Core;
 using TimboJimbo.PropertyBindings;
 using TimboJimbo.Styling;
-using UnityEditorInternal;
 
 namespace TimboJimboEditor.Styling.Defaults
 {

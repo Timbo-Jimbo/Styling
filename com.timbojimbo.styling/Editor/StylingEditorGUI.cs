@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
-using TimboJimbo.PropertyBindings;
-using TimboJimbo.Styling;
+using TimboJimbo.Core;
 using UnityEditor;
 using UnityEngine;
 
@@ -17,32 +16,6 @@ namespace TimboJimboEditor.Styling
         public static readonly Color AccentWhite = new Color(0.90f, 0.90f, 0.90f, 1f);
         public static readonly Color AccentGreen = new Color(0.10f, 0.85f, 0.45f, 1f);
 
-        public static void EaseTypePopup(Rect rect, EaseType current, Action<EaseType> onSelected)
-        {
-            if (EditorGUI.DropdownButton(rect, new GUIContent(current.ToString()), FocusType.Passive))
-            {
-                var popup = new EaseTypePickerPopup(current, onSelected);
-                PopupWindow.Show(rect, popup);
-            }
-        }
-
-        public static void DiscreteValueSelectionModePopup(Rect rect, DiscreteValueSelectionMode current, Action<DiscreteValueSelectionMode> onSelected)
-        {
-            if (EditorGUI.DropdownButton(rect, new GUIContent(ObjectNames.NicifyVariableName(current.ToString())), FocusType.Passive))
-            {
-                var popup = new DiscreteValueSelectionModePickerPopup(current, onSelected);
-                PopupWindow.Show(rect, popup);
-            }
-        }
-
-        public static void ColorInterpolationModePopup(Rect rect, ColorInterpolationMode current, Action<ColorInterpolationMode> onSelected)
-        {
-            if (EditorGUI.DropdownButton(rect, new GUIContent(current.ToString()), FocusType.Passive))
-            {
-                var popup = new ColorInterpolationModePickerPopup(current, onSelected);
-                PopupWindow.Show(rect, popup);
-            }
-        }
 
         /// <summary>Direction an arrow pip points toward (its tip).</summary>
         public enum PipDirection { Up, Down, Left, Right }
@@ -593,24 +566,6 @@ namespace TimboJimboEditor.Styling
 
     public static class StylingEditorGUILayout
     {
-        public static void EaseTypePopup(EaseType current, Action<EaseType> onSelected, params GUILayoutOption[] options)
-        {
-            var rect = EditorGUILayout.GetControlRect(options);
-            StylingEditorGUI.EaseTypePopup(rect, current, onSelected);
-        }
-
-        public static void DiscreteValueSelectionModePopup(DiscreteValueSelectionMode current, Action<DiscreteValueSelectionMode> onSelected, params GUILayoutOption[] options)
-        {
-            var rect = EditorGUILayout.GetControlRect(options);
-            StylingEditorGUI.DiscreteValueSelectionModePopup(rect, current, onSelected);
-        }
-
-        public static void ColorInterpolationModePopup(ColorInterpolationMode current, Action<ColorInterpolationMode> onSelected, params GUILayoutOption[] options)
-        {
-            var rect = EditorGUILayout.GetControlRect(options);
-            StylingEditorGUI.ColorInterpolationModePopup(rect, current, onSelected);
-        }
-
         public static int SegmentedControl(int selected, string[] labels, Action<int> onSelected, params GUILayoutOption[] options)
         {
             var rect = EditorGUILayout.GetControlRect(false, 20f, options);

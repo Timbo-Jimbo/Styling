@@ -1,12 +1,8 @@
-using System;
 using System.Collections.Generic;
-using TimboJimbo.PropertyBindings;
 using TimboJimbo.Styling;
-using TimboJimboEditor.PropertyBindings.Utility;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Pool;
-using Object = UnityEngine.Object;
 
 namespace TimboJimboEditor.Styling
 {

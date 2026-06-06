@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using TimboJimbo.Core;
 using TimboJimbo.PropertyBindings;
 using TimboJimbo.Styling;
+using TimboJimboEditor.Core;
 using TimboJimboEditor.PropertyBindings.Utility;
 using TimboJimboEditor.Styling.Defaults;
 using UnityEditor;
@@ -668,7 +670,7 @@ namespace TimboJimboEditor.Styling
 
 			using (new EditorGUI.DisabledScope(!transition.Animate))
 			{
-				StylingEditorGUI.EaseTypePopup(rect, transition.EaseType, newEase => 
+				CoreEditorGUI.EaseTypePopup(rect, transition.EaseType, newEase => 
 				{
 					Undo.RecordObject(_sheet, "Change Transition Ease");
 					transition.EaseType = newEase;
@@ -713,7 +715,7 @@ namespace TimboJimboEditor.Styling
 
 				if (property.Kind == ValueKind.Color)
 				{
-					StylingEditorGUI.ColorInterpolationModePopup(rect, config.Color, newMode =>
+					CoreEditorGUI.ColorInterpolationModePopup(rect, config.Color, newMode =>
 					{
 						Undo.RecordObject(_sheet, "Change Transition Interpolation");
 						config.Color = newMode;
@@ -779,7 +781,7 @@ namespace TimboJimboEditor.Styling
 
 			using (new EditorGUI.DisabledScope(!transition.Animate))
 			{
-				StylingEditorGUI.DiscreteValueSelectionModePopup(rect, transition.DiscreteValueSelection, newMode =>
+				CoreEditorGUI.DiscreteValueSelectionModePopup(rect, transition.DiscreteValueSelection, newMode =>
 				{
 					Undo.RecordObject(_sheet, "Change Discrete Value Selection");
 					transition.DiscreteValueSelection = newMode;
