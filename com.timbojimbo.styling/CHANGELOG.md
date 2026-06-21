@@ -1,3 +1,9 @@
+## [0.6.0] - 21/06/2026
+
+- Fixed `StyleGroup` not updating when changed via Unity animation (`OnDidApplyAnimationProperties` hook added)
+- Updated to use new Property Bindings API (`BulkWriteScope()`, `TryWrite()`, `TryRead()`)
+- Updated `com.timbojimbo.propertybindings` dependency to `0.6.0`
+
 ## [0.5.0] - 04/06/2026
 
 - Moved yet more shared code to Core package
