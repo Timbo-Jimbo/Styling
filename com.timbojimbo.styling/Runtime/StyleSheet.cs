@@ -418,13 +418,13 @@ namespace TimboJimbo.Styling
             {
                 var bindingCollection = handle.BindingCollection;
 
-                foreach(var (property, binding) in bindingCollection.Bindings)
+                foreach(var property in bindingCollection.Properties)
                 {
-                    var readResult = binding.Read();
+                    var readSuccess = bindingCollection.TryRead(property, out var readValue);
 
-                    if (readResult.Success)
+                    if (readSuccess)
                     {
-                        propertyValues.Add(new BindablePropertyToValue { Property = property, Value = readResult.Value });
+                        propertyValues.Add(new BindablePropertyToValue { Property = property, Value = readValue });
                     }
                     else
                     {
@@ -623,10 +623,10 @@ namespace TimboJimbo.Styling
             using (var handle = _bindingCollectionManager.Acquire())
             {
                 var binding = handle.BindingCollection;
-                using (var writer = binding.StartBulkWriteScope())
+                using (binding.BulkWriteScope())
                 {
                     for (int i = 0; i < values.Count; i++)
-                        writer.TryWrite(values[i].Property, values[i].Value);
+                        binding.TryWrite(values[i].Property, values[i].Value);
                 }
             }
 

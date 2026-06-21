@@ -199,9 +199,11 @@ namespace TimboJimboEditor.Styling
 
 			if (revertToSnapshot && _collection != null && _preEditValues != null)
 			{
-				using var writer = _collection.StartBulkWriteScope();
-				for (int i = 0; i < _preEditValues.Count; i++)
-					writer.TryWrite(_preEditValues[i].Property, _preEditValues[i].Value);
+				using(_collection.BulkWriteScope())
+				{
+					for (int i = 0; i < _preEditValues.Count; i++)
+						_collection.TryWrite(_preEditValues[i].Property, _preEditValues[i].Value);
+				}
 			}
 
 			_tracker?.StopDetecting();

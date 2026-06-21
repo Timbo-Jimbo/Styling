@@ -34,6 +34,11 @@ namespace TimboJimbo.Styling
             StylingSystem.MarkDirty(this);
         }
 
+        private void OnDidApplyAnimationProperties()
+        {
+            StylingSystem.MarkDirty(this);
+        }
+
         public void GetStyleActivations(List<StyleActivation> activations)
         {
             activations.Clear();
