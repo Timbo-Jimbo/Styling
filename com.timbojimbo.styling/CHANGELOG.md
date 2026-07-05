@@ -1,3 +1,9 @@
+## [0.7.0] - 06/07/2026
+
+- Updated `com.timbojimbo.propertybindings` dependency to `0.7.0`
+- Per-`StyleSheet` foldout vars are now stored in `SessionPrefs`, so folding one doesnt fold all
+- Disallow `StyleSheet` from recording user edits that target `StyleSheet`'s
+
 ## [0.6.1] - 21/06/2026
 
 - Updated `com.timbojimbo.propertybindings` dependency to `0.6.1`
