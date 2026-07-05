@@ -182,7 +182,7 @@ namespace TimboJimboEditor.Styling
 
 			BindablePropertyUtility.GetBindableProperties(target.gameObject, _allProperties, recursive: true);
 			_collection = PropertyBindingCollection.Bind(target.gameObject, _allProperties);
-			_tracker = new UserEditTracker(filterOut: bp => !_allProperties.Contains(bp));
+			_tracker = new UserEditTracker(filterOut: bp => bp.Target is StyleSheet || !_allProperties.Contains(bp));
 
 			Undo.RegisterFullObjectHierarchyUndo(target.gameObject, "Begin Style Recording");
 

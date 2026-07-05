@@ -18,23 +18,9 @@ namespace TimboJimboEditor.Styling
 		private bool _isPreviewing;
 		private string _previewStyleName;
 
-		private static bool StylesFoldoutExpanded
-		{
-			get => SessionState.GetBool("StyleSheetEditor.StylesFoldoutExpanded", true);
-			set => SessionState.SetBool("StyleSheetEditor.StylesFoldoutExpanded", value);
-		}
-
-		private static bool PropertyTableFoldoutExpanded
-		{
-			get => SessionState.GetBool("StyleSheetEditor.PropertyTableFoldoutExpanded", true);
-			set => SessionState.SetBool("StyleSheetEditor.PropertyTableFoldoutExpanded", value);
-		}
-
-		private static bool ShowTransitions 
-		{
-			get => SessionState.GetBool("StyleSheetEditor.ShowTransitions", false);
-			set => SessionState.SetBool("StyleSheetEditor.ShowTransitions", value);
-		}
+		private static SessionBool StylesFoldoutExpanded = new SessionBool("StylesFoldoutExpanded");
+		private static SessionBool PropertyTableFoldoutExpanded = new SessionBool("PropertyTableFoldoutExpanded");
+		private static SessionBool ShowTransitions = new SessionBool("ShowTransitions");
 
 
 		private void OnEnable()
@@ -71,7 +57,7 @@ namespace TimboJimboEditor.Styling
 				return;
 			
 			StylingEditorGUI.DrawFoldout(
-				expanded: StylesFoldoutExpanded,
+				expanded: StylesFoldoutExpanded.Get(serializedObject),
 				drawContent: () =>
 				{
 					EditorGUILayout.LabelField("Styles", EditorStyles.boldLabel);
@@ -85,10 +71,10 @@ namespace TimboJimboEditor.Styling
 					}
 
 				},
-				onToggle: value => StylesFoldoutExpanded = value
+				onToggle: value => StylesFoldoutExpanded.Set(serializedObject, value)
 			);
 			
-			if (!StylesFoldoutExpanded)
+			if (!StylesFoldoutExpanded.Get(serializedObject))
 				return;
 			
 			EditorGUILayout.Space(EditorGUIUtility.standardVerticalSpacing * 2f);
@@ -236,32 +222,32 @@ namespace TimboJimboEditor.Styling
 				return;
 
 			StylingEditorGUI.DrawFoldout(
-				expanded: PropertyTableFoldoutExpanded,
+				expanded: PropertyTableFoldoutExpanded.Get(serializedObject),
 				drawContent: () =>
 				{
 					EditorGUILayout.LabelField("Properties", EditorStyles.boldLabel);
 					GUILayout.FlexibleSpace();
 
 					StylingEditorGUILayout.SegmentedControl(
-						selected: ShowTransitions ? 1 : 0, 
+						selected: ShowTransitions.Get(serializedObject) ? 1 : 0, 
 						labels: new[] { "Values", "Transitions" }, 
 						onSelected: i =>
 						{
-							PropertyTableFoldoutExpanded = true;
+							PropertyTableFoldoutExpanded.Set(serializedObject, true);
 							var wantsToShowTransitions = i == 1;
-							if (wantsToShowTransitions != ShowTransitions)
-								ShowTransitions = wantsToShowTransitions;
+							if (wantsToShowTransitions != ShowTransitions.Get(serializedObject))
+								ShowTransitions.Set(serializedObject, wantsToShowTransitions);
 						}, 
 						GUILayout.Width(180f));
 				},
-				onToggle: value => PropertyTableFoldoutExpanded = value
+				onToggle: value => PropertyTableFoldoutExpanded.Set(serializedObject, value)
 			);
 
-			if (!PropertyTableFoldoutExpanded)
+			if (!PropertyTableFoldoutExpanded.Get(serializedObject))
 				return;
 
 			EditorGUILayout.Space(EditorGUIUtility.standardVerticalSpacing * 2f);
-			StyleSheetPropertyTable table = ShowTransitions ? _transitionsTable : _valuesTable;
+			StyleSheetPropertyTable table = ShowTransitions.Get(serializedObject) ? _transitionsTable : _valuesTable;
 			if (table == null) return;	
 
 			using (new EditorGUI.DisabledScope(StyleSheetRecordingSession.IsRecording))
@@ -478,6 +464,43 @@ namespace TimboJimboEditor.Styling
 
 			SceneView.RepaintAll();
 		}
+
+		internal class SessionBool
+		{
+			private readonly string _key;
+			private HashSet<EntityId> _initializedForTargets = new HashSet<EntityId>();
+
+			public bool Get(SerializedObject target)
+			{
+				EnsureInit(target);
+				
+				var defaultExpanded = EditorPrefs.GetBool($"Default.{_key}.Expanded", true);
+				return SessionState.GetBool($"{target.targetObject.GetEntityId()}.{_key}.Expanded", defaultExpanded);
+			}
+
+			public bool Set(SerializedObject target, bool value)
+			{
+				SessionState.SetBool($"{target.targetObject.GetEntityId()}.{_key}.Expanded", value);
+				EditorPrefs.SetBool($"Default.{_key}.Expanded", value);
+				return value;
+			}
+
+			private void EnsureInit(SerializedObject target)
+			{
+				var entityId = target.targetObject.GetEntityId();
+
+				if (!_initializedForTargets.Add(entityId))
+					return;
+					
+				Set(target, Get(target));
+			}
+
+			public SessionBool(string key)
+			{
+				_key = key;
+			}
+		}
+
 
 	}
 }
