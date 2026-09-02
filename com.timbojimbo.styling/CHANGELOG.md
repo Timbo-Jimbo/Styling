@@ -1,9 +1,21 @@
 ## [Unreleased]
 
+## [0.8.0] - 02/09/2026
+
+### Added
+
 - Added structured, non-mutating `StyleSheet.ValidateBindings()` reports
 - Added public transition get/set/remove APIs
 - Added idempotent `GetOrCreateStyle` authoring
 - Added dry-run target value resolution without scene mutation or transition changes
+- Added idempotent `UpsertStyle`, exact `ReplaceStyle`, `ReplaceAllStyles`, and `ClearStyles` operations
+- Added immutable `StyleSheetSnapshot` capture for authored, active, resolved, and validation state
+- Added transactional Editor authoring through `StyleSheetEditSession` with preflight validation, cancellation, one-step Undo, prefab override recording, and scene dirtying
+- Added package-native authoring tests for mutation semantics, snapshots, cancellation, commit, idempotency, and Undo
+
+### Changed
+
+- Updated `com.timbojimbo.propertybindings` dependency to `0.8.0`
 
 ## [0.7.0] - 06/07/2026
 

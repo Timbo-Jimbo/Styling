@@ -207,6 +207,89 @@ namespace TimboJimbo.Styling
         }
 
         /// <summary>
+        /// Adds or updates the supplied sparse values while retaining unspecified values.
+        /// Baseline seeds are used only for properties not already present in the baseline.
+        /// </summary>
+        public Style UpsertStyle(
+            string styleName,
+            IReadOnlyList<BindablePropertyToValue> values,
+            IReadOnlyList<BindablePropertyToValue> baselineSeeds)
+        {
+            ValidateStyleMutation(styleName, values, baselineSeeds);
+            var style = GetOrCreateStyle(styleName);
+
+            using (_bindingCollectionManager.Acquire())
+            {
+                for (int i = 0; i < values.Count; i++)
+                    Util.Upsert(style.PropertyValues, values[i].Property, values[i].Value);
+                EnsurePropertiesExistInBaselineAndConfig(values, baselineSeeds);
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
+
+            return style;
+        }
+
+        /// <summary>Replaces a style so it contains exactly the supplied sparse values.</summary>
+        public Style ReplaceStyle(
+            string styleName,
+            IReadOnlyList<BindablePropertyToValue> values,
+            IReadOnlyList<BindablePropertyToValue> baselineSeeds)
+        {
+            ValidateStyleMutation(styleName, values, baselineSeeds);
+            var style = GetOrCreateStyle(styleName);
+
+            using (_bindingCollectionManager.Acquire())
+            {
+                style.PropertyValues.Clear();
+                for (int i = 0; i < values.Count; i++) style.PropertyValues.Add(values[i]);
+                EnsurePropertiesExistInBaselineAndConfig(values, baselineSeeds);
+                PruneUnusedPropertyConfigs();
+                _bindingCollectionManager.Invalidate();
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
+
+            return style;
+        }
+
+        /// <summary>
+        /// Replaces the complete ordered style collection and baseline. Existing transitions are
+        /// retained for properties that remain live; new properties receive their default transition.
+        /// </summary>
+        public void ReplaceAllStyles(
+            IReadOnlyList<Style> styles,
+            IReadOnlyList<BindablePropertyToValue> baselineValues)
+        {
+            if (styles == null) throw new ArgumentNullException(nameof(styles));
+            if (baselineValues == null) throw new ArgumentNullException(nameof(baselineValues));
+            ValidateCompleteDefinition(styles, baselineValues);
+
+            var replacementStyles = CloneStyles(styles);
+            var replacementBaseline = CopyValues(baselineValues);
+            var replacementConfigs = ReconcileConfigs(replacementStyles, replacementBaseline, _propertyConfigs);
+            ReplaceAuthoredState(replacementStyles, replacementBaseline, replacementConfigs);
+        }
+
+        /// <summary>Removes all styles. Optionally removes baseline and transition state as well.</summary>
+        public void ClearStyles(bool clearProperties = false)
+        {
+            using (_bindingCollectionManager.Acquire())
+            {
+                _styles.Clear();
+                if (clearProperties)
+                {
+                    _baselineValues.Clear();
+                    _propertyConfigs.Clear();
+                    _bindingCollectionManager.Invalidate();
+                }
+                else
+                {
+                    PruneUnusedPropertyConfigs();
+                }
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+            }
+        }
+
+        /// <summary>
         /// Creates a new sparse style.
         /// </summary>
         /// <param name="styleName">Name of the new style.</param>
@@ -467,6 +550,24 @@ namespace TimboJimbo.Styling
                 foreach (var styleName in activeStyles)
                     activeStyleSet.Add(styleName);
                 GetTargetValues(activeStyleSet, results);
+            }
+        }
+
+        /// <summary>Creates a detached, non-mutating view of authored, active, resolved, and validation state.</summary>
+        public StyleSheetSnapshot CreateSnapshot()
+        {
+            using (ListPool<StyleActivation>.Get(out var activations))
+            using (HashSetPool<string>.Get(out var activeStyleNames))
+            {
+                StylingSystem.GetStyleActivations(gameObject, activations);
+                for (int i = 0; i < activations.Count; i++)
+                    if (activations[i].Active) activeStyleNames.Add(activations[i].Name);
+
+                var resolvedValues = new List<BindablePropertyToValue>();
+                GetTargetValues(activeStyleNames, resolvedValues);
+                return new StyleSheetSnapshot(
+                    _styles, _baselineValues, _propertyConfigs, activeStyleNames,
+                    resolvedValues, ValidateBindings());
             }
         }
 
@@ -817,6 +918,180 @@ namespace TimboJimbo.Styling
             
             if(changed)
                 _bindingCollectionManager.Invalidate();
+        }
+
+        private void EnsurePropertiesExistInBaselineAndConfig(
+            IReadOnlyList<BindablePropertyToValue> values,
+            IReadOnlyList<BindablePropertyToValue> baselineSeeds)
+        {
+            bool changed = false;
+            for (int i = 0; i < values.Count; i++)
+            {
+                var property = values[i].Property;
+                if (!Util.ContainsProperty(_baselineValues, property))
+                {
+                    var seed = FindValue(baselineSeeds, property, out var seedValue)
+                        ? seedValue
+                        : ValueContainer.FromDefault(property.Kind);
+                    _baselineValues.Add(new BindablePropertyToValue { Property = property, Value = seed });
+                    changed = true;
+                }
+
+                if (!Util.ContainsProperty(_propertyConfigs, property))
+                {
+                    _propertyConfigs.Add(new StylePropertyConfig
+                    {
+                        Property = property,
+                        Transition = StylePropertyTransition.GetDefault(property)
+                    });
+                    changed = true;
+                }
+            }
+
+            if (changed) _bindingCollectionManager.Invalidate();
+        }
+
+        internal void ReplaceAuthoredState(
+            IReadOnlyList<Style> styles,
+            IReadOnlyList<BindablePropertyToValue> baselineValues,
+            IReadOnlyList<StylePropertyConfig> propertyConfigs)
+        {
+            using (_bindingCollectionManager.Acquire())
+            {
+                _styles = CloneStyles(styles);
+                _baselineValues = CopyValues(baselineValues);
+                _propertyConfigs = CopyConfigs(propertyConfigs);
+                _bindingCollectionManager.Invalidate();
+                UpdateStylingState(UpdateType.RefreshStyleActivationsAndTargetValues);
+            }
+        }
+
+        private void ValidateStyleMutation(
+            string styleName,
+            IReadOnlyList<BindablePropertyToValue> values,
+            IReadOnlyList<BindablePropertyToValue> baselineSeeds)
+        {
+            if (string.IsNullOrWhiteSpace(styleName))
+                throw new ArgumentException("Style name cannot be null, empty, or whitespace.", nameof(styleName));
+            if (values == null) throw new ArgumentNullException(nameof(values));
+            if (baselineSeeds == null) throw new ArgumentNullException(nameof(baselineSeeds));
+            ValidateUniqueValues(values, nameof(values));
+            ValidateUniqueValues(baselineSeeds, nameof(baselineSeeds));
+
+            for (int i = 0; i < values.Count; i++)
+            {
+                var property = values[i].Property;
+                if (!Util.ContainsProperty(_baselineValues, property) &&
+                    !FindValue(baselineSeeds, property, out _))
+                    throw new ArgumentException(
+                        $"A baseline seed is required for new property '{property.Path}'.",
+                        nameof(baselineSeeds));
+            }
+        }
+
+        private static void ValidateCompleteDefinition(
+            IReadOnlyList<Style> styles,
+            IReadOnlyList<BindablePropertyToValue> baselineValues)
+        {
+            ValidateUniqueValues(baselineValues, nameof(baselineValues));
+            var names = new HashSet<string>();
+            var baselineProperties = new HashSet<BindableProperty>(BindablePropertyEqualityComparer.Instance);
+            for (int i = 0; i < baselineValues.Count; i++) baselineProperties.Add(baselineValues[i].Property);
+
+            for (int i = 0; i < styles.Count; i++)
+            {
+                var style = styles[i] ?? throw new ArgumentException("Styles cannot contain null.", nameof(styles));
+                if (string.IsNullOrWhiteSpace(style.Name) || !names.Add(style.Name))
+                    throw new ArgumentException($"Style name '{style.Name}' is empty or duplicated.", nameof(styles));
+                ValidateUniqueValues(style.PropertyValues, nameof(styles));
+                for (int p = 0; p < style.PropertyValues.Count; p++)
+                    if (!baselineProperties.Contains(style.PropertyValues[p].Property))
+                        throw new ArgumentException(
+                            $"Style '{style.Name}' property '{style.PropertyValues[p].Property.Path}' has no baseline value.",
+                            nameof(styles));
+            }
+        }
+
+        private static void ValidateUniqueValues(IReadOnlyList<BindablePropertyToValue> values, string paramName)
+        {
+            var properties = new HashSet<BindableProperty>(BindablePropertyEqualityComparer.Instance);
+            for (int i = 0; i < values.Count; i++)
+            {
+                var entry = values[i];
+                if (!entry.Property.IsValid)
+                    throw new ArgumentException($"Property at index {i} is invalid.", paramName);
+                if (entry.Value.Kind != entry.Property.Kind)
+                    throw new ArgumentException(
+                        $"Value kind {entry.Value.Kind} does not match property kind {entry.Property.Kind} at index {i}.",
+                        paramName);
+                if (!properties.Add(entry.Property))
+                    throw new ArgumentException($"Property '{entry.Property.Path}' is duplicated.", paramName);
+            }
+        }
+
+        private static bool FindValue(
+            IReadOnlyList<BindablePropertyToValue> values,
+            BindableProperty property,
+            out ValueContainer value)
+        {
+            for (int i = 0; i < values.Count; i++)
+            {
+                if (!values[i].Property.Equals(property)) continue;
+                value = values[i].Value;
+                return true;
+            }
+            value = default;
+            return false;
+        }
+
+        private static List<Style> CloneStyles(IReadOnlyList<Style> styles)
+        {
+            var result = new List<Style>(styles.Count);
+            for (int i = 0; i < styles.Count; i++)
+            {
+                var style = styles[i];
+                result.Add(new Style { Name = style.Name, PropertyValues = CopyValues(style.PropertyValues) });
+            }
+            return result;
+        }
+
+        private static List<BindablePropertyToValue> CopyValues(IReadOnlyList<BindablePropertyToValue> values)
+        {
+            var result = new List<BindablePropertyToValue>(values.Count);
+            for (int i = 0; i < values.Count; i++) result.Add(values[i]);
+            return result;
+        }
+
+        private static List<StylePropertyConfig> CopyConfigs(IReadOnlyList<StylePropertyConfig> configs)
+        {
+            var result = new List<StylePropertyConfig>(configs.Count);
+            for (int i = 0; i < configs.Count; i++) result.Add(configs[i]);
+            return result;
+        }
+
+        private static List<StylePropertyConfig> ReconcileConfigs(
+            IReadOnlyList<Style> styles,
+            IReadOnlyList<BindablePropertyToValue> baseline,
+            IReadOnlyList<StylePropertyConfig> existing)
+        {
+            var properties = new List<BindableProperty>();
+            var seen = new HashSet<BindableProperty>(BindablePropertyEqualityComparer.Instance);
+            for (int i = 0; i < baseline.Count; i++)
+                if (seen.Add(baseline[i].Property)) properties.Add(baseline[i].Property);
+            for (int s = 0; s < styles.Count; s++)
+                for (int p = 0; p < styles[s].PropertyValues.Count; p++)
+                    if (seen.Add(styles[s].PropertyValues[p].Property)) properties.Add(styles[s].PropertyValues[p].Property);
+
+            var result = new List<StylePropertyConfig>(properties.Count);
+            for (int i = 0; i < properties.Count; i++)
+            {
+                var property = properties[i];
+                StylePropertyTransition transition = StylePropertyTransition.GetDefault(property);
+                for (int c = 0; c < existing.Count; c++)
+                    if (existing[c].Property.Equals(property)) { transition = existing[c].Transition; break; }
+                result.Add(new StylePropertyConfig { Property = property, Transition = transition });
+            }
+            return result;
         }
 
         private void PruneUnusedPropertyConfigs()
