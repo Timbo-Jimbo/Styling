@@ -81,6 +81,7 @@ namespace TimboJimbo.Styling
         public IReadOnlyList<BindablePropertyToValue> BaselineValues => _baselineValues;
         public IReadOnlyList<StylePropertyConfig> PropertyConfigs => _propertyConfigs;
         public bool IsTransitioning => _isTransitioning;
+        public bool HasInvalidBindings => !ValidateBindings().IsValid;
 
         public StyleSheet() 
         { 
@@ -168,6 +169,19 @@ namespace TimboJimbo.Styling
             if(!TryGetStyle(styleName, out var style))
                 throw new ArgumentException($"No style with name {styleName} exists.");
 
+            return style;
+        }
+
+        /// <summary>Returns an existing style or creates an empty one with the requested name.</summary>
+        public Style GetOrCreateStyle(string styleName)
+        {
+            if (string.IsNullOrWhiteSpace(styleName))
+                throw new ArgumentException("Style name cannot be null, empty, or whitespace.", nameof(styleName));
+            if (TryGetStyle(styleName, out var style))
+                return style;
+
+            style = new Style { Name = styleName };
+            _styles.Add(style);
             return style;
         }
 
@@ -408,6 +422,132 @@ namespace TimboJimbo.Styling
             }
         }
 
+        public StylePropertyTransition GetTransition(BindableProperty property)
+        {
+            if (!Util.TryFindIndexByProperty(_propertyConfigs, property, out var index))
+                throw new ArgumentException($"Property '{property.Path}' has no transition configuration.", nameof(property));
+            return _propertyConfigs[index].Transition;
+        }
+
+        public void SetTransition(BindableProperty property, StylePropertyTransition transition)
+        {
+            if (!property.IsValid)
+                throw new ArgumentException("A transition requires a valid property.", nameof(property));
+            if (transition.Duration < 0f)
+                throw new ArgumentOutOfRangeException(nameof(transition), "Transition duration cannot be negative.");
+
+            if (Util.TryFindIndexByProperty(_propertyConfigs, property, out var index))
+                _propertyConfigs[index] = new StylePropertyConfig { Property = property, Transition = transition };
+            else
+            {
+                _propertyConfigs.Add(new StylePropertyConfig { Property = property, Transition = transition });
+                _bindingCollectionManager.Invalidate();
+            }
+        }
+
+        public bool RemoveTransition(BindableProperty property)
+        {
+            if (!Util.TryFindIndexByProperty(_propertyConfigs, property, out var index))
+                return false;
+            _propertyConfigs.RemoveAt(index);
+            return true;
+        }
+
+        /// <summary>
+        /// Resolves baseline and sparse style values without writing targets or changing transition state.
+        /// Later styles in sheet order win.
+        /// </summary>
+        public void ResolveTargetValues(IReadOnlyCollection<string> activeStyles, List<BindablePropertyToValue> results)
+        {
+            if (activeStyles == null) throw new ArgumentNullException(nameof(activeStyles));
+            if (results == null) throw new ArgumentNullException(nameof(results));
+
+            using (HashSetPool<string>.Get(out var activeStyleSet))
+            {
+                foreach (var styleName in activeStyles)
+                    activeStyleSet.Add(styleName);
+                GetTargetValues(activeStyleSet, results);
+            }
+        }
+
+        /// <summary>Validates serialized sheet structure and binding resolution without applying values.</summary>
+        public StyleSheetValidationReport ValidateBindings()
+        {
+            var issues = new List<StyleSheetValidationIssue>();
+            var styleNames = new HashSet<string>();
+            var styledProperties = new HashSet<BindableProperty>(BindablePropertyEqualityComparer.Instance);
+            var baselineProperties = new HashSet<BindableProperty>(BindablePropertyEqualityComparer.Instance);
+
+            for (int i = 0; i < _baselineValues.Count; i++)
+            {
+                var property = _baselineValues[i].Property;
+                if (!baselineProperties.Add(property))
+                    issues.Add(new StyleSheetValidationIssue(StyleSheetValidationCode.DuplicateProperty,
+                        $"Baseline contains duplicate property '{property.Path}'.", property: property));
+                ValidateProperty(property, issues);
+            }
+
+            for (int s = 0; s < _styles.Count; s++)
+            {
+                var style = _styles[s];
+                if (style == null)
+                {
+                    issues.Add(new StyleSheetValidationIssue(StyleSheetValidationCode.EmptyStyleName,
+                        $"Style entry at index {s} is null."));
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(style.Name))
+                    issues.Add(new StyleSheetValidationIssue(StyleSheetValidationCode.EmptyStyleName,
+                        $"Style entry at index {s} has no name."));
+                else if (!styleNames.Add(style.Name))
+                    issues.Add(new StyleSheetValidationIssue(StyleSheetValidationCode.DuplicateStyleName,
+                        $"Style name '{style.Name}' is duplicated.", style.Name));
+
+                var localProperties = new HashSet<BindableProperty>(BindablePropertyEqualityComparer.Instance);
+                for (int p = 0; p < style.PropertyValues.Count; p++)
+                {
+                    var property = style.PropertyValues[p].Property;
+                    styledProperties.Add(property);
+                    if (!localProperties.Add(property))
+                        issues.Add(new StyleSheetValidationIssue(StyleSheetValidationCode.DuplicateProperty,
+                            $"Style '{style.Name}' contains duplicate property '{property.Path}'.", style.Name, property));
+                    if (!baselineProperties.Contains(property))
+                        issues.Add(new StyleSheetValidationIssue(StyleSheetValidationCode.MissingBaseline,
+                            $"Style '{style.Name}' property '{property.Path}' has no baseline value.", style.Name, property));
+                    ValidateProperty(property, issues, style.Name);
+                }
+            }
+
+            for (int i = 0; i < _propertyConfigs.Count; i++)
+            {
+                var property = _propertyConfigs[i].Property;
+                if (!baselineProperties.Contains(property) && !styledProperties.Contains(property))
+                    issues.Add(new StyleSheetValidationIssue(StyleSheetValidationCode.OrphanedTransition,
+                        $"Transition for '{property.Path}' is not used by baseline or any style.", property: property));
+            }
+
+            return new StyleSheetValidationReport(issues.AsReadOnly());
+        }
+
+        private void ValidateProperty(
+            BindableProperty property,
+            List<StyleSheetValidationIssue> issues,
+            string styleName = null)
+        {
+            if (!property.IsValid)
+            {
+                issues.Add(new StyleSheetValidationIssue(StyleSheetValidationCode.InvalidProperty,
+                    $"Property '{property.Path}' has a missing target, empty path, or invalid value kind.", styleName, property));
+                return;
+            }
+
+            var resolution = PropertyBindingRegistry.Diagnose(gameObject, property);
+            if (!resolution.Success)
+                issues.Add(new StyleSheetValidationIssue(StyleSheetValidationCode.BindingResolutionFailed,
+                    $"No binding can be constructed for '{property.Target.name}.{property.Path}'.",
+                    styleName, property, resolution));
+        }
+
         /// <summary>
         /// Reads the current live values of every property the StyleSheet knows about.
         /// </summary>
@@ -603,6 +743,7 @@ namespace TimboJimbo.Styling
 
             foreach(var style in _styles)
             {
+                if (style == null) continue;
                 if (!activeStyles.Contains(style.Name)) continue;
 
                 foreach (var pv in style.PropertyValues)
@@ -845,6 +986,7 @@ namespace TimboJimbo.Styling
                     for (int s = 0; s < styles.Count; s++)
                     {
                         var style = styles[s];
+                        if (style == null) continue;
                         for (int p = 0; p < style.PropertyValues.Count; p++)
                         {
                             var prop = style.PropertyValues[p].Property;

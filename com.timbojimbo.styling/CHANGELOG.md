@@ -1,3 +1,10 @@
+## [Unreleased]
+
+- Added structured, non-mutating `StyleSheet.ValidateBindings()` reports
+- Added public transition get/set/remove APIs
+- Added idempotent `GetOrCreateStyle` authoring
+- Added dry-run target value resolution without scene mutation or transition changes
+
 ## [0.7.0] - 06/07/2026
 
 - Updated `com.timbojimbo.propertybindings` dependency to `0.7.0`
