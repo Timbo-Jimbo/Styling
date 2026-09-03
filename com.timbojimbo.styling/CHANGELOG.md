@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+## [0.9.0] - 03/09/2026
+
+### Breaking changes
+
+- Removed the unused programmatic-authoring layer: `StyleSheetEditSession`, `StyleSheetSnapshot`, `StyleSheetValidationReport`, and `StyleSheet.UpsertStyle/ReplaceStyle/ReplaceAllStyles/ClearStyles/GetOrCreateStyle/ResolveTargetValues/CreateSnapshot/ValidateBindings/HasInvalidBindings`. The editor's authoring API (`CreateStyle`, `EditStyle`, `SetStyleValue`, `SetBaselineValue`, `SetTransition`, ...) is the single mutation surface
+
+### Added
+
+- `StyleGroup.SetActive`, `IsActive`, and `Remove` for driving activations from code
+- Behavioral tests covering activation, sheet-order precedence, hierarchy override, override scopes, and frame-driven transitions
+
+### Changed
+
+- Updated `com.timbojimbo.propertybindings` dependency to `0.8.2`
+
 ## [0.8.0] - 02/09/2026
 
 ### Added

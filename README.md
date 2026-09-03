@@ -1,30 +1,5 @@
 # Timbo Jimbo - Styling
 
-## Programmatic authoring
-
-Use `StyleSheetEditSession` for multi-step Editor authoring. Changes are staged away from the live component, validated before mutation, and applied with one Undo operation when committed. Disposing without committing cancels the edit.
-
-```csharp
-using var edit = StyleSheetEditSession.Begin(sheet, "Configure hover style");
-
-var scale = edit.Bind(rootTransform, TransformProperties.LocalScale);
-
-edit.UpsertStyle("Hovered")
-	.Set(scale, ValueContainer.From(Vector3.one * 1.05f));
-
-edit.SetTransition(scale, new StylePropertyTransition { Duration = 0.25f });
-edit.Commit();
-```
-
-Runtime-safe mutation APIs distinguish merge and replacement semantics:
-
-- `UpsertStyle` replaces supplied property values and retains unspecified values.
-- `ReplaceStyle` makes one style contain exactly the supplied values.
-- `ReplaceAllStyles` replaces the complete ordered style and baseline definition.
-- `ClearStyles` removes styles and can optionally clear baseline/transition state.
-
-`CreateSnapshot()` returns a detached view of style order, sparse values, baselines, transitions, active styles, resolved values, and validation results without mutating the scene.
-
 A CSS-inspired styling system for Unity.
 
 It lets you define named styles for a `GameObject` subtree, switch those styles on and off through simple activation sources, and smoothly transition individual properties between states.
@@ -151,6 +126,13 @@ It exposes a list of `StyleActivation` entries, where each entry contains:
 `StyleGroup` participates in hierarchy resolution, so closer groups override farther ancestor groups. That makes it easy to establish shared state at a parent level and then override it deeper in the tree when needed.
 
 Example: a parent `StyleGroup` could activate `Hover` and `Selected` for the whole subtree, then a child `StyleGroup` could deactivate `Hover` for just its own subtree.
+
+Drive it from code with `SetActive`, `IsActive` and `Remove`:
+
+```csharp
+group.SetActive("Hover", true);   // marks dirty only when the state actually changes
+group.Remove("Hover");           // defer back to ancestor groups
+```
 
 ## Authoring Workflow
 
