@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.9.1] - 03/09/2026
+
+### Added
+
+- `InteractionStyleState`: built-in activation source emitting `Hovered`, `Pressed`, `Selected` and `Disabled` from pointer/selection events; `Disabled` follows `Selectable.interactable` and parent `CanvasGroup` interactability
+
 ## [0.9.0] - 03/09/2026
 
 ### Breaking changes

@@ -134,6 +134,10 @@ group.SetActive("Hover", true);   // marks dirty only when the state actually ch
 group.Remove("Hover");           // defer back to ancestor groups
 ```
 
+### `InteractionStyleState`
+
+A built-in activation source for UI interaction. Add it next to a `Selectable` (or any object that receives pointer events) and it emits `Hovered`, `Pressed`, `Selected` and `Disabled` as independent activations, so a sheet can layer them (e.g. `Pressed` on top of `Hovered`). `Disabled` follows `Selectable.interactable` and suppresses the interactive states. Pressed is cleared on release, drag-out, cancel, and disable. Style names are configurable in the inspector.
+
 ## Authoring Workflow
 
 ### Create a Style
