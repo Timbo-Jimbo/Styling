@@ -138,6 +138,10 @@ group.Remove("Hover");           // defer back to ancestor groups
 
 A built-in activation source for UI interaction. Add it next to a `Selectable` (or any object that receives pointer events) and it emits `Hovered`, `Pressed`, `Selected` and `Disabled` as independent activations, so a sheet can layer them (e.g. `Pressed` on top of `Hovered`). `Disabled` follows `Selectable.interactable` and suppresses the interactive states. Pressed is cleared on release, drag-out, cancel, and disable. Style names are configurable in the inspector.
 
+### `SiblingStyleState`
+
+An activation source driven by hierarchy position — the CSS `:first-child` / `:nth-child` idea as a component. It emits `First`, `Last`, `Odd`, `Even` (1-based) and, with a stride set, `Nth` for positions matching `stride × k + offset`. Inactive siblings are skipped by default. Because these are ordinary activations, they layer with everything else: an `Even` row that is also `Hovered` just works.
+
 ## Authoring Workflow
 
 ### Create a Style

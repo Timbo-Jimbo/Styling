@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.9.2] - 03/09/2026
+
+### Added
+
+- `SiblingStyleState`: activation source emitting `First`, `Last`, `Odd`, `Even` and optional `Nth` (stride/offset) from sibling position
+
 ## [0.9.1] - 03/09/2026
 
 ### Added
