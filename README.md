@@ -142,6 +142,12 @@ A built-in activation source for UI interaction. Add it next to a `Selectable` (
 
 An activation source driven by hierarchy position — the CSS `:first-child` / `:nth-child` idea as a component. It emits `First`, `Last`, `Odd`, `Even` (1-based) and, with a stride set, `Nth` for positions matching `stride × k + offset`. Inactive siblings are skipped by default. Because these are ordinary activations, they layer with everything else: an `Even` row that is also `Hovered` just works.
 
+### Themes
+
+A `StyleTheme` asset is a flat table of named, typed values (`Primary: Color`, `Spacing: Float`, ...). Put a `StyleThemeSource` on any object to declare which theme applies to its subtree — the nearest source up the hierarchy wins, so a sidebar can use a different theme than the content area.
+
+In the property table, right-click a value cell → **Link to Theme** to make it follow a key instead of holding a literal. Linked cells show the key name (and a swatch for colors). The literal is kept as the fallback for when no theme provides the key, and **Unlink** restores it. Swapping the theme on a source re-styles the subtree; properties with transitions animate to the new values.
+
 ## Authoring Workflow
 
 ### Create a Style

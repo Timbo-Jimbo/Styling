@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+## [0.10.0] - 03/09/2026
+
+### Added
+
+- `StyleTheme` asset (flat key → typed value table) and `StyleThemeSource` component; nearest source up the hierarchy resolves linked cells
+- Style and baseline cells can link to a theme key (`StyleSheet.SetThemeKey`, right-click → Link to Theme); the literal is kept as fallback for missing keys or kind mismatches
+- Theme swaps re-style dependents and animate through existing transitions
+
 ## [0.9.2] - 03/09/2026
 
 ### Added

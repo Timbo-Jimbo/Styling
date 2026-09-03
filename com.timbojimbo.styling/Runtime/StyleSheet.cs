@@ -12,7 +12,12 @@ namespace TimboJimbo.Styling
     public struct BindablePropertyToValue
     {
         public BindableProperty Property;
+        /// <summary>Literal value. Also the fallback when <see cref="ThemeKey"/> cannot be resolved.</summary>
         public ValueContainer Value;
+        /// <summary>When non-empty, the value is taken from the nearest <see cref="StyleThemeSource"/>'s theme.</summary>
+        public string ThemeKey;
+
+        public bool IsThemed => !string.IsNullOrEmpty(ThemeKey);
     }
 
     [Serializable]
@@ -75,6 +80,7 @@ namespace TimboJimbo.Styling
         [NonSerialized] private float _transitionTime = float.MaxValue;
         [NonSerialized] private bool _isTransitioning;
         [NonSerialized] private bool _hasAppliedAnyStyling;
+        [NonSerialized] private StyleTheme _resolvedTheme;
         [NonSerialized] private BindingCollectionManager _bindingCollectionManager;
 
         public IReadOnlyList<Style> Styles => _styles;
@@ -439,6 +445,45 @@ namespace TimboJimbo.Styling
             return true;
         }
 
+        /// <summary>The theme currently resolving linked cells for this sheet, or null.</summary>
+        public StyleTheme ResolvedTheme => _resolvedTheme;
+
+        /// <summary>
+        /// Links (non-empty key) or unlinks (null/empty) a cell to a theme key. The cell's literal
+        /// value is kept as the fallback. <paramref name="styleName"/> null targets the baseline.
+        /// </summary>
+        public void SetThemeKey(string styleName, BindableProperty property, string themeKey)
+        {
+            var list = styleName == null ? _baselineValues : GetStyle(styleName).PropertyValues;
+            if (!Util.TryFindIndexByProperty(list, property, out var index))
+                throw new ArgumentException($"'{property.Path}' has no value in {(styleName == null ? "the baseline" : $"style '{styleName}'")}.", nameof(property));
+
+            var entry = list[index];
+            entry.ThemeKey = themeKey ?? string.Empty;
+            list[index] = entry;
+
+            using (_bindingCollectionManager.Acquire())
+                UpdateStylingState(UpdateType.RefreshTargetValuesOnly);
+        }
+
+        public string GetThemeKey(string styleName, BindableProperty property)
+        {
+            var list = styleName == null ? _baselineValues : GetStyle(styleName).PropertyValues;
+            return Util.TryFindIndexByProperty(list, property, out var index) ? list[index].ThemeKey : null;
+        }
+
+        private StyleTheme ResolveTheme() => StyleThemeSource.Resolve(gameObject);
+
+        /// <summary>Substitutes the theme value when the cell is linked, the key exists, and the kind matches; otherwise the literal.</summary>
+        private BindablePropertyToValue ResolveThemed(BindablePropertyToValue cell)
+        {
+            if (!cell.IsThemed || _resolvedTheme == null)
+                return cell;
+            if (_resolvedTheme.TryGetValue(cell.ThemeKey, out var themed) && themed.Kind == cell.Property.Kind)
+                cell.Value = themed;
+            return cell;
+        }
+
         /// <summary>
         /// Reads the current live values of every property the StyleSheet knows about.
         /// </summary>
@@ -482,7 +527,8 @@ namespace TimboJimbo.Styling
                     var entry = _baselineValues[i];
                     if (binding.TryRead(entry.Property, out var liveValue))
                     {
-                        _baselineValues[i] = new BindablePropertyToValue { Property = entry.Property, Value = liveValue };
+                        entry.Value = liveValue;
+                        _baselineValues[i] = entry;
                     }
                     else
                     {
@@ -515,6 +561,8 @@ namespace TimboJimbo.Styling
         {
             using (_bindingCollectionManager.Acquire())
             {
+                var themeChanged = ResolveTheme() != _resolvedTheme;
+
                 using (ListPool<string>.Get(out var oldActiveStyles))
                 using (ListPool<string>.Get(out var newActiveStyles))
                 {
@@ -535,7 +583,7 @@ namespace TimboJimbo.Styling
                     }
 
                     // No change in styles we actually care about!
-                    if (Util.ListContentsAreEqual(oldActiveStyles, newActiveStyles))
+                    if (!themeChanged && Util.ListContentsAreEqual(oldActiveStyles, newActiveStyles))
                         return;
                 }
 
@@ -627,18 +675,20 @@ namespace TimboJimbo.Styling
         private void GetTargetValues(HashSet<string> activeStyles, List<BindablePropertyToValue> result)
         {
             result.Clear();
+            _resolvedTheme = ResolveTheme();
 
             // Start from baseline.
             for (int i = 0; i < _baselineValues.Count; i++)
-                result.Add(_baselineValues[i]);
+                result.Add(ResolveThemed(_baselineValues[i]));
 
             foreach(var style in _styles)
             {
                 if (style == null) continue;
                 if (!activeStyles.Contains(style.Name)) continue;
 
-                foreach (var pv in style.PropertyValues)
+                foreach (var themedPv in style.PropertyValues)
                 {
+                    var pv = ResolveThemed(themedPv);
                     // Stomp over existing value, or add if missing
                     // (Should never be missing - baseline should cover all properties - but just in case...)
                     // (Should we log a warning and tell the user they should re-sync baseline..?)
@@ -814,14 +864,15 @@ namespace TimboJimbo.Styling
 
             public static bool Upsert(List<BindablePropertyToValue> list, BindableProperty property, ValueContainer value)
             {
-                var entry = new BindablePropertyToValue { Property = property, Value = value };
                 if (TryFindIndexByProperty(list, property, out var idx))
                 {
-                    list[idx] = entry;
+                    var existing = list[idx];
+                    existing.Value = value;
+                    list[idx] = existing; // keeps ThemeKey
                     return false; // updated existing
                 }
 
-                list.Add(entry);
+                list.Add(new BindablePropertyToValue { Property = property, Value = value });
                 return true; // added new
             }
         }
