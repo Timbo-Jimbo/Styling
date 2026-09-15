@@ -105,7 +105,7 @@ namespace TimboJimboEditor.Styling
 				for (int i = 0; i < edits.Count; i++)
 				{
 					var property = edits[i].BindableProperty;
-					hash = hash * 31 + (property.Target != null ? property.Target.GetInstanceID() : 0);
+					hash = hash * 31 + (property.Target != null ? property.Target.GetEntityId().GetHashCode() : 0);
 					hash = hash * 31 + (property.Path != null ? property.Path.GetHashCode() : 0);
 				}
 
@@ -178,8 +178,8 @@ namespace TimboJimboEditor.Styling
 				}
 
 				int id = 0;
-				var goOrder = new List<int>();
-				var goMap = new Dictionary<int, (GameObject go, List<BindableProperty> direct, List<int> compOrder, Dictionary<int, (Component comp, List<BindableProperty> props)> comps)>();
+				var goOrder = new List<EntityId>();
+				var goMap = new Dictionary<EntityId, (GameObject go, List<BindableProperty> direct, List<EntityId> compOrder, Dictionary<EntityId, (Component comp, List<BindableProperty> props)> comps)>();
 
 				for (int i = 0; i < _edits.Count; i++)
 				{
@@ -187,11 +187,11 @@ namespace TimboJimboEditor.Styling
 					var target = property.Target;
 					var component = target as Component;
 					var gameObject = component != null ? component.gameObject : target as GameObject;
-					int goKey = gameObject != null ? gameObject.GetInstanceID() : 0;
+					EntityId goKey = gameObject != null ? gameObject.GetEntityId() : EntityId.None;
 
 					if (!goMap.TryGetValue(goKey, out var goData))
 					{
-						goData = (gameObject, new List<BindableProperty>(), new List<int>(), new Dictionary<int, (Component, List<BindableProperty>)>());
+						goData = (gameObject, new List<BindableProperty>(), new List<EntityId>(), new Dictionary<EntityId, (Component, List<BindableProperty>)>());
 						goMap[goKey] = goData;
 						goOrder.Add(goKey);
 					}
@@ -202,7 +202,7 @@ namespace TimboJimboEditor.Styling
 					}
 					else
 					{
-						int componentKey = component.GetInstanceID();
+						EntityId componentKey = component.GetEntityId();
 						if (!goData.comps.TryGetValue(componentKey, out var compData))
 						{
 							compData = (component, new List<BindableProperty>());

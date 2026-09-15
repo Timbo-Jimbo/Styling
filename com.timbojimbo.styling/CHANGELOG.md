@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+## [0.10.1] - 15/09/2026
+
+### Fixed
+
+- Replaced deprecated `GetInstanceID` editor usage with Unity's `GetEntityId` API
+
+### Changed
+
+- Updated `com.timbojimbo.propertybindings` dependency to `0.8.3`
+
 ## [0.10.0] - 03/09/2026
 
 ### Added
