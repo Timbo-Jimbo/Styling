@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+## [0.10.2] - 15/09/2026
+
+### Fixed
+
+- Restored Style Sheet recording startup by updating Property Bindings to filter unsupported Unity-internal serialized properties
+- Replaced the obsolete sorted `FindObjectsByType` overload in the Style Theme editor
+
+### Changed
+
+- Updated `com.timbojimbo.propertybindings` dependency to `0.8.4`
+
 ## [0.10.1] - 15/09/2026
 
 ### Fixed

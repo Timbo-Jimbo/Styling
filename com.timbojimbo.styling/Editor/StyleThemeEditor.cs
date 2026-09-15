@@ -77,7 +77,7 @@ namespace TimboJimboEditor.Styling
         private void MarkDependentsDirty()
         {
             var theme = (StyleTheme)target;
-            foreach (var source in FindObjectsByType<StyleThemeSource>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            foreach (var source in FindObjectsByType<StyleThemeSource>(FindObjectsInactive.Include))
                 if (source.Theme == theme)
                     StylingSystem.MarkDirty(source);
         }
