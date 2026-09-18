@@ -447,32 +447,10 @@ namespace TimboJimboEditor.Styling
 
 		private static GUIStyle s_inheritStyle;
 		private static GUIStyle s_missingBaselineStyle;
-		private static GUIStyle s_themedStyle;
 
 		private void DrawThemedCell(Rect rect, BindablePropertyToValue entry)
 		{
-			s_themedStyle ??= new GUIStyle(EditorStyles.miniLabel)
-			{
-				alignment = TextAnchor.MiddleLeft,
-				normal = { textColor = new Color(0.55f, 0.75f, 1f, 1f) }
-			};
-
-			var theme = _sheet.ResolvedTheme;
-			var themed = default(ValueContainer);
-			bool resolved = theme != null && theme.TryGetValue(entry.ThemeKey, out themed) && themed.Kind == entry.Property.Kind;
-			string tooltip = resolved
-				? $"Linked to '{entry.ThemeKey}' in {theme.name}. Right-click to unlink."
-				: $"Linked to '{entry.ThemeKey}' but no theme in the hierarchy provides it; using the literal fallback.";
-
-			if (entry.Property.Kind == ValueKind.Color)
-			{
-				var swatch = new Rect(rect.x + 2f, rect.y + 3f, rect.height - 6f, rect.height - 6f);
-				var color = resolved ? themed.ColorValue : entry.Value.ColorValue;
-				EditorGUI.DrawRect(swatch, color);
-				rect.xMin = swatch.xMax + 4f;
-			}
-
-			EditorGUI.LabelField(rect, new GUIContent((resolved ? "✦ " : "⚠ ") + entry.ThemeKey, tooltip), s_themedStyle);
+			StyleCellEditorGUI.DrawThemedCell(rect, _sheet.ResolvedTheme, entry.Property, entry.ThemeKey, entry.Value);
 		}
 
 		private void DrawMissingCell(Rect rect, BindableProperty property, bool isBaseline, string styleName)
@@ -570,30 +548,12 @@ namespace TimboJimboEditor.Styling
 
 		private void AddThemeMenuItems(GenericMenu menu, BindableProperty property, string styleName)
 		{
-			menu.AddSeparator(string.Empty);
-			var currentKey = _sheet.GetThemeKey(styleName, property);
-			var theme = _sheet.ResolvedTheme;
-
-			if (theme == null)
-			{
-				menu.AddDisabledItem(new GUIContent("Link to Theme/(no StyleThemeSource in hierarchy)"));
-			}
-			else
-			{
-				bool any = false;
-				foreach (var entry in theme.Entries)
-				{
-					if (entry.Value.Kind != property.Kind) continue;
-					any = true;
-					var key = entry.Key;
-					menu.AddItem(new GUIContent($"Link to Theme/{key}"), key == currentKey, () => SetThemeKey(styleName, property, key));
-				}
-				if (!any)
-					menu.AddDisabledItem(new GUIContent($"Link to Theme/(no {property.Kind} entries in {theme.name})"));
-			}
-
-			if (!string.IsNullOrEmpty(currentKey))
-				menu.AddItem(new GUIContent("Unlink from Theme"), false, () => SetThemeKey(styleName, property, null));
+			StyleCellEditorGUI.AddThemeMenuItems(
+				menu,
+				_sheet.ResolvedTheme,
+				property.Kind,
+				_sheet.GetThemeKey(styleName, property),
+				key => SetThemeKey(styleName, property, key));
 		}
 
 		private void SetThemeKey(string styleName, BindableProperty property, string key)
@@ -607,23 +567,7 @@ namespace TimboJimboEditor.Styling
 
 		private void AddClipboardMenuItems(GenericMenu menu, BindableProperty property, bool isBaseline, string styleName, bool isPresent, ValueContainer currentValue)
 		{
-			if (isPresent)
-			{
-				menu.AddItem(new GUIContent("Copy"), false, () => StyleSheetPropertyTableClipboard.SetValueClipboard(currentValue));
-			}
-			else
-			{
-				menu.AddDisabledItem(new GUIContent("Copy"));
-			}
-
-			if (StyleSheetPropertyTableClipboard.TryGetClipboardValue(property.Kind, out var clipboardValue))
-			{
-				menu.AddItem(new GUIContent("Paste"), false, () => ApplyCellValue(property, isBaseline, styleName, clipboardValue));
-			}
-			else
-			{
-				menu.AddDisabledItem(new GUIContent("Paste"));
-			}
+			StyleCellEditorGUI.AddClipboardMenuItems(menu, property.Kind, isPresent, currentValue, value => ApplyCellValue(property, isBaseline, styleName, value));
 		}
 
 		private void ApplyCellValue(BindableProperty property, bool isBaseline, string styleName, ValueContainer value)
@@ -648,14 +592,7 @@ namespace TimboJimboEditor.Styling
 			EditorUtility.SetDirty(_sheet);
 		}
 
-		private static bool IsContextMenuEvent(Event evt, Rect rect)
-		{
-			if (!rect.Contains(evt.mousePosition))
-				return false;
-
-			return evt.type == EventType.ContextClick
-				|| (evt.type == EventType.MouseDown && evt.button == 1);
-		}
+		private static bool IsContextMenuEvent(Event evt, Rect rect) => StyleCellEditorGUI.IsContextMenuEvent(evt, rect);
 
 		private bool TryGetBaselineValue(BindableProperty property, out ValueContainer value)
 		{

@@ -1,21 +1,21 @@
 {
 	"name": "com.timbojimbo.styling",
 	"displayName":"Styling",
-	"version": "0.10.2",
+	"version": "0.11.0",
 	"unity": "6000.0",
 	"unityRelease": "0f1",
 	"description": "A styling system for Unity inspired by CSS.",
 	"dependencies": {
-		"com.timbojimbo.core": "0.5.1",
+		"com.timbojimbo.core": "0.6.0",
 		"com.unity.test-framework": "1.6.0",
-		"com.timbojimbo.propertybindings": "0.8.4"
+		"com.timbojimbo.propertybindings": "0.8.5"
 	},
 	"author": {
 		"name": "Timbo Jimbo",
 		"url": "https://timbojimbo.com",
 		"email": "hello@timbojimbo.com"
 	},
-	"changelogUrl": "https://github.com/Timbo-Jimbo/Styling/blob/main/CHANGELOG.md",
+	"changelogUrl": "https://github.com/Timbo-Jimbo/Styling/blob/main/com.timbojimbo.styling/CHANGELOG.md",
 	"documentationUrl": "https://github.com/Timbo-Jimbo/Styling#readme",
 	"licensesUrl": "https://github.com/Timbo-Jimbo/Styling/blob/main/LICENSE"
 }

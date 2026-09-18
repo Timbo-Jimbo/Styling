@@ -1,4 +1,5 @@
 using TimboJimbo.Styling;
+using TimboJimboEditor.Core;
 using UnityEditor;
 using UnityEngine;
 
@@ -31,11 +32,11 @@ namespace TimboJimboEditor.Styling
 
 		private void DrawStyleActivations()
 		{
-			StylingEditorGUI.DrawFoldout(
+			FoldoutGUI.Draw(
 				expanded: ShowStyleActivations,
 				drawContent: () =>
 				{
-					EditorGUILayout.LabelField("Style Activations", EditorStyles.boldLabel);
+					FoldoutGUI.Title("Style Activations");
 					GUILayout.FlexibleSpace();
 					if(StylingEditorGUI.AddButton())
 					{
@@ -52,6 +53,7 @@ namespace TimboJimboEditor.Styling
 			if (!ShowStyleActivations)
 				return;
 
+			FoldoutGUI.BeginContent();
 
 			int removeAt = -1;
 
@@ -89,6 +91,8 @@ namespace TimboJimboEditor.Styling
 
 			if (removeAt >= 0)
 				_styleActivationsProp.DeleteArrayElementAtIndex(removeAt);
+
+			FoldoutGUI.EndContent();
 		}
 	}
 }

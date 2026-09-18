@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TimboJimbo.Styling;
+using TimboJimboEditor.Core;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Pool;
@@ -18,9 +19,9 @@ namespace TimboJimboEditor.Styling
 		private bool _isPreviewing;
 		private string _previewStyleName;
 
-		private static SessionBool StylesFoldoutExpanded = new SessionBool("StylesFoldoutExpanded");
-		private static SessionBool PropertyTableFoldoutExpanded = new SessionBool("PropertyTableFoldoutExpanded");
-		private static SessionBool ShowTransitions = new SessionBool("ShowTransitions");
+		private static FoldoutGUI.SessionBool StylesFoldoutExpanded = new FoldoutGUI.SessionBool("StylesFoldoutExpanded");
+		private static FoldoutGUI.SessionBool PropertyTableFoldoutExpanded = new FoldoutGUI.SessionBool("PropertyTableFoldoutExpanded");
+		private static FoldoutGUI.SessionBool ShowTransitions = new FoldoutGUI.SessionBool("ShowTransitions");
 
 
 		private void OnEnable()
@@ -56,11 +57,11 @@ namespace TimboJimboEditor.Styling
 			if (stylesProp == null)
 				return;
 			
-			StylingEditorGUI.DrawFoldout(
+			FoldoutGUI.Draw(
 				expanded: StylesFoldoutExpanded.Get(serializedObject),
 				drawContent: () =>
 				{
-					EditorGUILayout.LabelField("Styles", EditorStyles.boldLabel);
+					FoldoutGUI.Title("Styles");
 					GUILayout.FlexibleSpace();
 					using (new EditorGUI.DisabledScope(StyleSheetRecordingSession.IsRecording))
 					{
@@ -76,8 +77,8 @@ namespace TimboJimboEditor.Styling
 			
 			if (!StylesFoldoutExpanded.Get(serializedObject))
 				return;
-			
-			EditorGUILayout.Space(EditorGUIUtility.standardVerticalSpacing * 2f);
+
+			FoldoutGUI.BeginContent();
 
 			bool isAnyRecording = StyleSheetRecordingSession.IsRecording;
 			bool isThisRecording = isAnyRecording && StyleSheetRecordingSession.Target == _sheet;
@@ -99,7 +100,7 @@ namespace TimboJimboEditor.Styling
 			}
 
 			DrawStyleControlsList(isAnyRecording);
-			EditorGUILayout.Space(EditorGUIUtility.standardVerticalSpacing * 2f);
+			FoldoutGUI.EndContent();
 		}
 
 		private void DrawStyleControlsList(bool isAnyRecording)
@@ -221,11 +222,11 @@ namespace TimboJimboEditor.Styling
 			if (_transitionsTable == null)
 				return;
 
-			StylingEditorGUI.DrawFoldout(
+			FoldoutGUI.Draw(
 				expanded: PropertyTableFoldoutExpanded.Get(serializedObject),
 				drawContent: () =>
 				{
-					EditorGUILayout.LabelField("Properties", EditorStyles.boldLabel);
+					FoldoutGUI.Title("Properties");
 					GUILayout.FlexibleSpace();
 
 					StylingEditorGUILayout.SegmentedControl(
@@ -246,20 +247,18 @@ namespace TimboJimboEditor.Styling
 			if (!PropertyTableFoldoutExpanded.Get(serializedObject))
 				return;
 
-			EditorGUILayout.Space(EditorGUIUtility.standardVerticalSpacing * 2f);
 			StyleSheetPropertyTable table = ShowTransitions.Get(serializedObject) ? _transitionsTable : _valuesTable;
-			if (table == null) return;	
+			if (table == null) return;
 
+			FoldoutGUI.BeginContent();
 			using (new EditorGUI.DisabledScope(StyleSheetRecordingSession.IsRecording))
 			{
-				GUILayout.Space(4f);
 				float treeHeight = Mathf.Max(table.TreeView.totalHeight, EditorGUIUtility.singleLineHeight);
 				treeHeight += EditorGUIUtility.singleLineHeight; // extra space for when the vertical scroll bar appears
 				var rect = GUILayoutUtility.GetRect(0f, 10000f, treeHeight, treeHeight);
 				table.TreeView.OnGUI(rect);
 			}
-
-			EditorGUILayout.Space(EditorGUIUtility.standardVerticalSpacing * 2f);
+			FoldoutGUI.EndContent();
 		}
 
 
@@ -463,42 +462,6 @@ namespace TimboJimboEditor.Styling
 			_previewStyleName = null;
 
 			SceneView.RepaintAll();
-		}
-
-		internal class SessionBool
-		{
-			private readonly string _key;
-			private HashSet<EntityId> _initializedForTargets = new HashSet<EntityId>();
-
-			public bool Get(SerializedObject target)
-			{
-				EnsureInit(target);
-				
-				var defaultExpanded = EditorPrefs.GetBool($"Default.{_key}.Expanded", true);
-				return SessionState.GetBool($"{target.targetObject.GetEntityId()}.{_key}.Expanded", defaultExpanded);
-			}
-
-			public bool Set(SerializedObject target, bool value)
-			{
-				SessionState.SetBool($"{target.targetObject.GetEntityId()}.{_key}.Expanded", value);
-				EditorPrefs.SetBool($"Default.{_key}.Expanded", value);
-				return value;
-			}
-
-			private void EnsureInit(SerializedObject target)
-			{
-				var entityId = target.targetObject.GetEntityId();
-
-				if (!_initializedForTargets.Add(entityId))
-					return;
-					
-				Set(target, Get(target));
-			}
-
-			public SessionBool(string key)
-			{
-				_key = key;
-			}
 		}
 
 

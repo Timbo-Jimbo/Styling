@@ -89,6 +89,7 @@ namespace TimboJimbo.Styling
             result.Clear();
             
             using (ListPool<StyleSheet>.Get(out var styleSheets))
+            using (ListPool<StyledProperty>.Get(out var styledProperties))
             using (HashSetPool<string>.Get(out var seenStyles))
             {
                 if(includeChildren)
@@ -102,6 +103,23 @@ namespace TimboJimbo.Styling
                     {
                         if (seenStyles.Add(style.Name))
                             result.Add(style.Name);
+                    }
+                }
+
+                if(includeChildren)
+                    root.GetComponentsInChildren(true, styledProperties);
+                else
+                    root.GetComponents(styledProperties);
+
+                foreach (var styledProperty in styledProperties)
+                {
+                    foreach (var styleValue in styledProperty.StyleValues)
+                    {
+                        if (string.IsNullOrEmpty(styleValue.StyleName))
+                            continue;
+
+                        if (seenStyles.Add(styleValue.StyleName))
+                            result.Add(styleValue.StyleName);
                     }
                 }
             }

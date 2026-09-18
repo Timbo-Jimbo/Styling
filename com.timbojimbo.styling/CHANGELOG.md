@@ -1,5 +1,26 @@
 ## [Unreleased]
 
+## [0.11.0] - 18/09/2026
+
+### Added
+
+- `StyledProperty`: a component that styles a single bindable property — baseline (literal or theme-linked), sparse per-style overrides, and one transition — without a full `StyleSheet`. Its inspector mirrors the sheet's style list (Baseline row, hold-to-preview, right-click value menu)
+- `StyledProperty` style names are reported by `StylingSystem.GetSupportedStyleNames`, its baseline is serialized by the scene/prefab save handler, and sheet recording ignores edits to it
+
+### Changed
+
+- Foldout headers, indented section bodies, per-object expanded state and ghost buttons now come from `com.timbojimbo.core` (`FoldoutGUI`), adopting the taller banded look shared with Localization; `StylingEditorGUI.DrawFoldout` and `StyleSheetEditor.SessionBool` are removed
+- Theme-linked cells (sheet table and `StyledProperty`) now draw the real value control, locked, showing the resolved value, with a link chip (icon + key) attached to its right edge; unresolved keys show a warning icon and the literal fallback
+- Shared value-cell helpers (`StyleCellEditorGUI`): themed cell drawing, Copy/Paste, Link/Unlink to Theme, and right-click detection are one implementation used by both inspectors
+- `StyledProperty` value cells that are not theme-linked show an "unlinked" chip beside the control, so a linkable value no longer looks like a plain field; it dims when no `StyleThemeSource` is in the hierarchy and clicking it opens the same menu as a right-click
+- Updated `com.timbojimbo.core` dependency to `0.6.0` (provides `FoldoutGUI`; its linear-light OkLab/OkLCh blending changes the output of OkLab/OkLCh transitions) and `com.timbojimbo.propertybindings` to `0.8.5`
+- `package.json`'s `changelogUrl` now points at the `CHANGELOG.md` inside the package folder
+
+### Fixed
+
+- `StyledProperty` inspector: right-clicking a colour (or other) value cell now opens the Copy/Paste/Link menu; the cell's own right-click handler used to take the event first
+- `StyledProperty` inspector: picking a property no longer throws a layout-group mismatch from the Transition section, since the new property is applied before the sections lay out
+
 ## [0.10.2] - 15/09/2026
 
 ### Fixed

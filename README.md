@@ -114,6 +114,18 @@ Examples:
 
 Styles are identified by string name. A style does not need to contain every property in the sheet - only the ones it wants to change.
 
+### `StyledProperty`
+
+`StyledProperty` is the single-property version of a `StyleSheet`. Add it, point it at one bindable property, and it stores:
+
+- a **baseline** value for that property (literal, or linked to a theme key)
+- a sparse list of **style name → value** overrides
+- one **transition**
+
+It resolves the same way a sheet does — start from the baseline, apply each active style in list order, later entries win — and participates in the same activation cascade, override scopes, themes and save handling.
+
+Reach for it when a single field needs to react to styles ("this Image's color", "this label's font size"). Reach for a `StyleSheet` when several properties across a subtree change together, or when you want the recording workflow and the property table.
+
 ### `StyleGroup`
 
 `StyleGroup` is the built-in activation source.

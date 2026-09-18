@@ -9,8 +9,8 @@ using UnityEngine.SceneManagement;
 namespace TimboJimboEditor.Styling
 {
 	/// <summary>
-	/// Forces StyleSheets to serialize their baseline values by temporarily applying
-	/// empty style activations during scene/prefab save, then restores the prior
+	/// Forces StyleSheets and StyledProperties to serialize their baseline values by temporarily
+	/// applying empty style activations during scene/prefab save, then restores the prior
 	/// evaluated state immediately afterward.
 	/// </summary>
 	[InitializeOnLoad]
@@ -69,7 +69,7 @@ namespace TimboJimboEditor.Styling
 			{
 				if (root == null)
 					continue;
-				if (!ContainsStyleSheet(root))
+				if (!ContainsStyledComponents(root))
 					continue;
 
 				OverrideRoots.Add(root);
@@ -89,9 +89,10 @@ namespace TimboJimboEditor.Styling
 			OverrideRoots.Clear();
 		}
 
-		private static bool ContainsStyleSheet(GameObject root)
+		private static bool ContainsStyledComponents(GameObject root)
 		{
-			return root.GetComponentInChildren<StyleSheet>(includeInactive: true) != null;
+			return root.GetComponentInChildren<StyleSheet>(includeInactive: true) != null
+				|| root.GetComponentInChildren<StyledProperty>(includeInactive: true) != null;
 		}
 	}
 }
