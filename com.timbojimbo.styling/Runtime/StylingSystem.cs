@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using TimboJimbo.Core.Utility;
 using UnityEngine;
+using Unity.Scripting.LifecycleManagement;
 using UnityEngine.LowLevel;
 using UnityEngine.Pool;
 
 namespace TimboJimbo.Styling
 {
-    public static class StylingSystem
+    [AutoStaticsCleanup]
+    public static partial class StylingSystem
     {
         private static HashSet<GameObject> _dirtyRootQueue = new();
         private static List<StylingOverrideScope> _overrides = new();
