@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.12.0] - 01/10/2026
+
+### Changed
+
+- Requires Unity 6000.5: `StylingSystem`'s statics reset themselves on entering and leaving play mode with domain reload off, through Unity 6.5's `[AutoStaticsCleanup]`
+
 ## [0.11.0] - 18/09/2026
 
 ### Added

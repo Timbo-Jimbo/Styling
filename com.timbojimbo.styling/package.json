@@ -1,8 +1,8 @@
 {
 	"name": "com.timbojimbo.styling",
 	"displayName":"Styling",
-	"version": "0.11.0",
-	"unity": "6000.0",
+	"version": "0.12.0",
+	"unity": "6000.5",
 	"unityRelease": "0f1",
 	"description": "A styling system for Unity inspired by CSS.",
 	"dependencies": {
